@@ -30,6 +30,10 @@ typedef struct {
         Font *font;
         bool    auto_width;
         unsigned int width;
+        unsigned char padding_up;
+        unsigned char padding_down;
+        unsigned char padding_left;
+        unsigned char padding_right;
         TextAlignH h_align;
         TextAlignV v_align;
     } lineno;

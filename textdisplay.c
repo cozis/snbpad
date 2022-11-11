@@ -25,7 +25,9 @@ TextDisplay_getLineHeight(TextDisplay *tdisp)
 {
     if (tdisp->auto_line_height) {
         unsigned int h1 = tdisp->text.font->baseSize;
-        unsigned int h2 = tdisp->lineno.font->baseSize;
+        unsigned int h2 = tdisp->lineno.font->baseSize 
+                        + tdisp->lineno.padding_up 
+                        + tdisp->lineno.padding_down;
         return MAX(h1, h2);
     }
     return tdisp->line_height;
@@ -46,7 +48,9 @@ TextDisplay_getLinenoColumnWidth(TextDisplay *tdisp)
         width = size.x;
     } else
         width = tdisp->lineno.width;
-    return width;
+    return width
+         + tdisp->lineno.padding_left
+         + tdisp->lineno.padding_right;
 }
 
 static size_t 
@@ -123,7 +127,8 @@ static bool verticalScrollReachedUpperLimit(TextDisplay *tdisp)
 
 static void setVerticalScroll(TextDisplay *tdisp, int scroll)
 {
-    const int max_scroll = TextDisplay_getLogicalHeight(tdisp) - tdisp->h;
+    const int max_scroll = TextDisplay_getLogicalHeight(tdisp) - tdisp->h 
+                         + TextDisplay_getLineHeight(tdisp); // Don't know why this need to be here, but it does!
     scroll = MAX(scroll, 0);
     scroll = MIN(scroll, max_scroll);
     tdisp->v_scroll.amount = scroll;
@@ -162,9 +167,9 @@ void TextDisplay_onMouseWheel(TextDisplay *tdisp, int y)
 void TextDisplay_onMouseMotion(TextDisplay *tdisp, int x, int y)
 {
     if (tdisp->v_scroll.active) {
-        const unsigned int 
-        logical_text_height = TextDisplay_getLogicalHeight(tdisp);
-        int amount = tdisp->v_scroll.start_amount + logical_text_height * (double) (y - tdisp->v_scroll.start_cursor) / tdisp->h;
+        const unsigned int logical_text_height = TextDisplay_getLogicalHeight(tdisp);
+        int y_delta = y - tdisp->v_scroll.start_cursor;
+        int amount = tdisp->v_scroll.start_amount + y_delta * (double) logical_text_height / tdisp->h;
         setVerticalScroll(tdisp, amount);
     } else if (tdisp->selecting) {
         size_t pos = cursorFromClick(tdisp, x, y);
@@ -176,19 +181,30 @@ static void getVerticalScrollbarPosition(TextDisplay *tdisp,
                                          Rectangle *scrollbar, 
                                          Rectangle *thumb)
 {
-    scrollbar->width  = tdisp->scrollbar_size;
-    scrollbar->height = tdisp->h;
-    scrollbar->x = tdisp->x + tdisp->w - scrollbar->width;
-    scrollbar->y = tdisp->y;
+    if (TextDisplay_getLogicalHeight(tdisp) < (unsigned int) tdisp->h) {
+        scrollbar->width  = 0;
+        scrollbar->height = 0;
+        scrollbar->x = 0;
+        scrollbar->y = 0;
+        thumb->width  = 0;
+        thumb->height = 0;
+        thumb->x = 0;
+        thumb->y = 0;
+    } else {
+        scrollbar->width  = tdisp->scrollbar_size;
+        scrollbar->height = tdisp->h;
+        scrollbar->x = tdisp->x + tdisp->w - scrollbar->width;
+        scrollbar->y = tdisp->y;
 
-    int logical_text_height = TextDisplay_getLogicalHeight(tdisp);
-    int thumb_y = tdisp->h * (double) tdisp->v_scroll.amount / logical_text_height;
-    int thumb_height = scrollbar->height * (double) tdisp->h / logical_text_height;
+        int logical_text_height = TextDisplay_getLogicalHeight(tdisp);
+        int thumb_y = tdisp->h * (double) tdisp->v_scroll.amount / logical_text_height;
+        int thumb_height = scrollbar->height * (double) tdisp->h / logical_text_height;
 
-    thumb->x = scrollbar->x;
-    thumb->y = scrollbar->y + thumb_y;
-    thumb->width  = scrollbar->width;
-    thumb->height = thumb_height;
+        thumb->x = scrollbar->x;
+        thumb->y = scrollbar->y + thumb_y;
+        thumb->width  = scrollbar->width;
+        thumb->height = thumb_height;
+    }
 }
 
 void TextDisplay_onClickDown(TextDisplay *tdisp, int x, int y)
@@ -359,7 +375,7 @@ void TextDisplay_draw(TextDisplay *tdisp)
     unsigned int line_height = TextDisplay_getLineHeight(tdisp);
 
     int y_relative = -tdisp->v_scroll.amount;
-    size_t no = 0;
+    size_t no = 1;
     GapBufferIter iter;
     GapBufferIter_init(&iter, tdisp->buffer);
 
@@ -390,14 +406,14 @@ void TextDisplay_draw(TextDisplay *tdisp)
 
             Vector2 pos;
             switch (tdisp->lineno.h_align) {
-                case TextAlignH_LEFT:   pos.x = line_x; break;
-                case TextAlignH_RIGHT:  pos.x = line_x + (line_num_w - size.x);     break;
+                case TextAlignH_LEFT:   pos.x = line_x + tdisp->lineno.padding_left; break;
+                case TextAlignH_RIGHT:  pos.x = line_x + (line_num_w - size.x) - tdisp->lineno.padding_right;     break;
                 case TextAlignH_CENTER: pos.x = line_x + (line_num_w - size.x) / 2; break;
             }
             switch (tdisp->lineno.v_align) {
-                case TextAlignV_TOP:    pos.y = line_y; break;
+                case TextAlignV_TOP:    pos.y = line_y + tdisp->lineno.padding_up; break;
                 case TextAlignV_CENTER: pos.y = line_y + (line_height - size.y);     break;
-                case TextAlignV_BOTTOM: pos.y = line_y + (line_height - size.y) / 2; break;
+                case TextAlignV_BOTTOM: pos.y = line_y + (line_height - size.y) / 2 - tdisp->lineno.padding_down; break;
             }
             DrawTextEx(font, s, pos, font.baseSize, 
                        0, tdisp->lineno.fgcolor);
