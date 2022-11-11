@@ -1,6 +1,6 @@
+#include <stdint.h>
 #include <stdbool.h>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
+#include <raylib.h>
 
 typedef enum {
     TextAlignH_LEFT,
@@ -25,9 +25,9 @@ typedef struct {
     struct {
         bool hide;
         bool nobg;
-        SDL_Color fgcolor;
-        SDL_Color bgcolor;
-        TTF_Font *font;
+        Color fgcolor;
+        Color bgcolor;
+        Font *font;
         bool    auto_width;
         unsigned int width;
         TextAlignH h_align;
@@ -35,13 +35,13 @@ typedef struct {
     } lineno;
     struct {
         bool nobg;
-        SDL_Color fgcolor;
-        SDL_Color bgcolor;
-        TTF_Font *font;
-        SDL_Color selection_bgcolor;
+        Color fgcolor;
+        Color bgcolor;
+        Font *font;
+        Color selection_bgcolor;
     } text;
     struct {
-        SDL_Color bgcolor;
+        Color bgcolor;
     } cursor;
     unsigned int scrollbar_size;
     bool    auto_line_height;
@@ -60,16 +60,18 @@ typedef struct {
 } TextDisplay;
 
 void TextDisplay_tick(TextDisplay *tdisp);
-void TextDisplay_draw(TextDisplay *tdisp, SDL_Renderer *ren);
+void TextDisplay_draw(TextDisplay *tdisp);
 void TextDisplay_onClickUp(TextDisplay *tdisp, int x, int y);
 void TextDisplay_onClickDown(TextDisplay *tdisp, int x, int y);
 void TextDisplay_onMouseWheel(TextDisplay *tdisp, int y);
 void TextDisplay_onMouseMotion(TextDisplay *tdisp, int x, int y);
-void TextDisplay_onArrowDown(TextDisplay *tdisp, SDL_Keycode code);
+void TextDisplay_onArrowLeftDown(TextDisplay *tdisp);
+void TextDisplay_onArrowRightDown(TextDisplay *tdisp);
 void TextDisplay_onBackspaceDown(TextDisplay *tdisp);
 void TextDisplay_onReturnDown(TextDisplay *tdisp);
 void TextDisplay_onTabDown(TextDisplay *tdisp);
 void TextDisplay_onTextInput(TextDisplay *tdisp, const char *str, size_t len);
+void TextDisplay_onTextInput2(TextDisplay *tdisp, uint32_t rune);
 void TextDisplay_onPaste(TextDisplay *tdisp);
 void TextDisplay_onCopy(TextDisplay *tdisp);
 void TextDisplay_onCut(TextDisplay *tdisp);

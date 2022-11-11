@@ -1,5 +1,8 @@
 #include <assert.h>
+#include <string.h>
+#include <stdlib.h>
 #include "utils.h"
+#include "xutf8.h"
 #include "gapiter.h"
 #include "textdisplay.h"
 
@@ -21,8 +24,8 @@ static unsigned int
 TextDisplay_getLineHeight(TextDisplay *tdisp)
 {
     if (tdisp->auto_line_height) {
-        unsigned int h1 = TTF_FontHeight(tdisp->text.font);
-        unsigned int h2 = TTF_FontHeight(tdisp->lineno.font);
+        unsigned int h1 = tdisp->text.font->baseSize;
+        unsigned int h2 = tdisp->lineno.font->baseSize;
         return MAX(h1, h2);
     }
     return tdisp->line_height;
@@ -38,7 +41,9 @@ TextDisplay_getLinenoColumnWidth(TextDisplay *tdisp)
         size_t max_lineno = GapBuffer_getLineno(tdisp->buffer);
         char max_lineno_as_text[8];
         snprintf(max_lineno_as_text, sizeof(max_lineno_as_text), "%ld", max_lineno);
-        TTF_SizeUTF8(tdisp->lineno.font, max_lineno_as_text, &width, NULL);
+        Font font = *tdisp->lineno.font;
+        Vector2 size = MeasureTextEx(font, max_lineno_as_text, (int) font.baseSize, 0);
+        width = size.x;
     } else
         width = tdisp->lineno.width;
     return width;
@@ -60,9 +65,10 @@ cursorFromClick(TextDisplay *tdisp,
 
     unsigned int lineno_colm_w = TextDisplay_getLinenoColumnWidth(tdisp);
 
-    int line_w;
-    TTF_SizeUTF8(tdisp->text.font, line.str, &line_w, NULL);
-    
+    Font font = *tdisp->text.font;
+    Vector2 size = MeasureTextEx(font, line.str, (int) font.baseSize, 0);
+    int line_w = size.x;
+
     int cur;
     if (x - tdisp->x < (int) lineno_colm_w)
         cur = line.off;
@@ -82,7 +88,9 @@ cursorFromClick(TextDisplay *tdisp,
             {
                 char c = line.str[m];
                 line.str[m] = '\0';
-                int res = TTF_SizeUTF8(tdisp->text.font, line.str, &mx, NULL);
+                Font font = *tdisp->text.font;
+                Vector2 size = MeasureTextEx(font, line.str, (int) font.baseSize, 0);
+                mx = size.x;
                 line.str[m] = c;
             }
 
@@ -165,22 +173,22 @@ void TextDisplay_onMouseMotion(TextDisplay *tdisp, int x, int y)
 }
 
 static void getVerticalScrollbarPosition(TextDisplay *tdisp,
-                                         SDL_Rect *scrollbar, 
-                                         SDL_Rect *thumb)
+                                         Rectangle *scrollbar, 
+                                         Rectangle *thumb)
 {
-    scrollbar->w = tdisp->scrollbar_size;
-    scrollbar->h = tdisp->h;
-    scrollbar->x = tdisp->x + tdisp->w - scrollbar->w;
+    scrollbar->width  = tdisp->scrollbar_size;
+    scrollbar->height = tdisp->h;
+    scrollbar->x = tdisp->x + tdisp->w - scrollbar->width;
     scrollbar->y = tdisp->y;
 
     int logical_text_height = TextDisplay_getLogicalHeight(tdisp);
     int thumb_y = tdisp->h * (double) tdisp->v_scroll.amount / logical_text_height;
-    int thumb_height = scrollbar->h * (double) tdisp->h / logical_text_height;
+    int thumb_height = scrollbar->height * (double) tdisp->h / logical_text_height;
 
     thumb->x = scrollbar->x;
     thumb->y = scrollbar->y + thumb_y;
-    thumb->w = scrollbar->w;
-    thumb->h = thumb_height;
+    thumb->width  = scrollbar->width;
+    thumb->height = thumb_height;
 }
 
 void TextDisplay_onClickDown(TextDisplay *tdisp, int x, int y)
@@ -188,16 +196,12 @@ void TextDisplay_onClickDown(TextDisplay *tdisp, int x, int y)
     assert(x >= tdisp->x && x < tdisp->x + tdisp->w);
     assert(y >= tdisp->y && y < tdisp->y + tdisp->h);
 
-    SDL_Rect v_scrollbar, v_thumb;
+    Rectangle v_scrollbar, v_thumb;
     getVerticalScrollbarPosition(tdisp, &v_scrollbar, &v_thumb);
 
-    SDL_Rect cursor_rect;
-    cursor_rect.x = x;
-    cursor_rect.y = y;
-    cursor_rect.w = 1;
-    cursor_rect.h = 1;
-    if (SDL_HasIntersection(&cursor_rect, &v_scrollbar)) {
-        if (SDL_HasIntersection(&cursor_rect, &v_thumb)) {
+    Vector2 cursor_point = {x, y};
+    if (CheckCollisionPointRec(cursor_point, v_scrollbar)) {
+        if (CheckCollisionPointRec(cursor_point, v_thumb)) {
             tdisp->v_scroll.active = true;
             tdisp->v_scroll.start_cursor = y;
             tdisp->v_scroll.start_amount = tdisp->v_scroll.amount;
@@ -229,13 +233,16 @@ void TextDisplay_onClickUp(TextDisplay *tdisp, int x, int y)
     }
 }
 
-void TextDisplay_onArrowDown(TextDisplay *tdisp, SDL_Keycode code)
+void TextDisplay_onArrowLeftDown(TextDisplay *tdisp)
 {
     tdisp->selection.active = false;
-    switch (code) {
-        case SDLK_LEFT:  GapBuffer_moveCursorBackward(tdisp->buffer); break;
-        case SDLK_RIGHT: GapBuffer_moveCursorForward(tdisp->buffer);  break;
-    }
+    GapBuffer_moveCursorBackward(tdisp->buffer);
+}
+
+void TextDisplay_onArrowRightDown(TextDisplay *tdisp)
+{
+    tdisp->selection.active = false;
+    GapBuffer_moveCursorForward(tdisp->buffer);
 }
 
 void TextDisplay_onTabDown(TextDisplay *tdisp)
@@ -279,6 +286,16 @@ void TextDisplay_onTextInput(TextDisplay *tdisp,
     GapBuffer_insertString(tdisp->buffer, str, len);
 }
 
+void TextDisplay_onTextInput2(TextDisplay *tdisp, uint32_t rune)
+{
+    char buffer[16];
+    int len = xutf8_sequence_from_utf32_codepoint(buffer, sizeof(buffer), rune);
+    if (len < 0)
+        TraceLog(LOG_WARNING, "RayLib provided an invalid unicode rune");
+    else
+        TextDisplay_onTextInput(tdisp, buffer, (size_t) len);
+}
+
 static void cutOrCopy(TextDisplay *tdisp, bool cut)
 {
     if (tdisp->selection.active) {
@@ -286,10 +303,9 @@ static void cutOrCopy(TextDisplay *tdisp, bool cut)
         Selection_getSlice(tdisp->selection, &offset, &length);
         char *s = GapBuffer_copyRange(tdisp->buffer, offset, length);
         if (s == NULL)
-            fprintf(stderr, "WARNING :: Failed to copy text from the buffer\n");
+            TraceLog(LOG_WARNING, "Failed to copy text from the buffer");
         else {
-            if (SDL_SetClipboardText(s))
-                fprintf(stderr, "WARNING :: Failed to copy text into the clipboard\n");
+            SetClipboardText(s);
             free(s);
         }
 
@@ -312,27 +328,33 @@ void TextDisplay_onCut(TextDisplay *tdisp)
 
 void TextDisplay_onPaste(TextDisplay *tdisp)
 {
-    if (SDL_HasClipboardText()) {
-        char *s = SDL_GetClipboardText();
-        if (s != NULL)
-            GapBuffer_insertString(tdisp->buffer, s, strlen(s));
-        SDL_free(s);
-    }
+    const char *s = GetClipboardText();
+    if (s != NULL)
+        GapBuffer_insertString(tdisp->buffer, s, strlen(s));
 }
 
-void TextDisplay_draw(TextDisplay *tdisp, 
-                      SDL_Renderer *ren)
+static size_t getSubstringRenderWidth(Slice line, Font font,
+                                      size_t offset, size_t length)
 {
-    SDL_Rect text_display_rect;
-    text_display_rect.x = tdisp->x;
-    text_display_rect.y = tdisp->y;
-    text_display_rect.w = tdisp->w;
-    text_display_rect.h = tdisp->h;
-    SDL_RenderSetViewport(ren, &text_display_rect);
-    
-    SDL_SetRenderDrawColor(ren, 
-        0xee, 0xee, 0xcc, 0xff);
-    SDL_RenderFillRect(ren, NULL);
+    char c = line.str[offset + length];
+    line.str[offset + length] = '\0';
+    Vector2 size = MeasureTextEx(font, line.str + offset, 
+                                 (int) font.baseSize, 0);
+    line.str[offset + length] = c;
+    return size.x;
+}
+
+static size_t getStringRenderWidth(Font font, const char *str)
+{
+    Vector2 size = MeasureTextEx(font, str, (int) font.baseSize, 0);
+    return size.x;
+}
+
+void TextDisplay_draw(TextDisplay *tdisp)
+{
+    ClearBackground((Color) {
+        0xee, 0xee, 0xee, 0xff
+    });
 
     unsigned int line_height = TextDisplay_getLineHeight(tdisp);
 
@@ -348,86 +370,43 @@ void TextDisplay_draw(TextDisplay *tdisp,
 
     Slice line;
     while (y_relative < tdisp->h && GapBufferIter_nextLine(&iter, &line)) {
-
-        SDL_Surface *surface;
-        if (line.len > 0) {
-            surface = TTF_RenderUTF8_Blended(tdisp->text.font, line.str, tdisp->text.fgcolor);
-            if (surface == NULL)
-                fprintf(stderr, "WARNING :: Failed to create line surface for \"%s\" (%ld bytes)\n", line.str, line.len);
-        } else
-            surface = NULL;
         
-        SDL_Rect lineno_rect;
+        int line_x = 0;
+        int line_y = y_relative;
+        int line_num_w = TextDisplay_getLinenoColumnWidth(tdisp);
+
         if (tdisp->lineno.hide == false) {
 
-            assert(tdisp->lineno.font != NULL);
+            if (tdisp->lineno.nobg == false)
+                DrawRectangle(line_x, line_y,
+                              line_num_w, line_height,
+                              tdisp->lineno.bgcolor);
 
-            int width = TextDisplay_getLinenoColumnWidth(tdisp);
+            char s[8];
+            snprintf(s, sizeof(s), "%ld", no);
+            
+            Font font = *tdisp->lineno.font;
+            Vector2 size = MeasureTextEx(font, s, (int) font.baseSize, 0);
 
-            lineno_rect.x = 0;
-            lineno_rect.y = y_relative;
-            lineno_rect.w = width;
-            lineno_rect.h = line_height;
-            if (tdisp->lineno.nobg == false) {
-                SDL_SetRenderDrawColor(ren, 
-                    tdisp->lineno.bgcolor.r, 
-                    tdisp->lineno.bgcolor.g, 
-                    tdisp->lineno.bgcolor.b, 
-                    tdisp->lineno.bgcolor.a);
-                SDL_RenderFillRect(ren, &lineno_rect);
+            Vector2 pos;
+            switch (tdisp->lineno.h_align) {
+                case TextAlignH_LEFT:   pos.x = line_x; break;
+                case TextAlignH_RIGHT:  pos.x = line_x + (line_num_w - size.x);     break;
+                case TextAlignH_CENTER: pos.x = line_x + (line_num_w - size.x) / 2; break;
             }
-
-            char lineno_text[8];
-            snprintf(lineno_text, sizeof(lineno_text), "%ld", no);
-            SDL_Surface *surface = TTF_RenderUTF8_Blended(tdisp->lineno.font, lineno_text, tdisp->lineno.fgcolor);
-            if (surface != NULL) {
-                
-                SDL_Rect lineno_text_rect;
-                lineno_text_rect.w = surface->w;
-                lineno_text_rect.h = surface->h;
-                switch (tdisp->lineno.h_align) {
-                    case TextAlignH_LEFT:   lineno_text_rect.x = lineno_rect.x; break;
-                    case TextAlignH_RIGHT:  lineno_text_rect.x = lineno_rect.x + lineno_rect.w - lineno_text_rect.w; break;
-                    case TextAlignH_CENTER: lineno_text_rect.x = lineno_rect.x + (lineno_rect.w - lineno_text_rect.w) / 2; break;
-                }
-                switch (tdisp->lineno.v_align) {
-                    case TextAlignV_TOP:    lineno_text_rect.y = lineno_rect.y; break;
-                    case TextAlignV_CENTER: lineno_text_rect.y = lineno_rect.y + lineno_rect.h - lineno_text_rect.h; break;
-                    case TextAlignV_BOTTOM: lineno_text_rect.y = lineno_rect.y + (lineno_rect.h - lineno_text_rect.h) / 2; break;
-                }
-
-                SDL_Texture *texture = SDL_CreateTextureFromSurface(ren, surface);
-                if (texture != NULL) {
-                    SDL_RenderCopy(ren, texture, NULL, &lineno_text_rect);
-                    SDL_DestroyTexture(texture);
-                } else
-                    fprintf(stderr, "WARNING :: Failed to create line texture\n");
-                SDL_FreeSurface(surface);
-            } else
-                fprintf(stderr, "WARNING :: Failed to build lineno surface\n");
-        } else {
-            lineno_rect.x = 0;
-            lineno_rect.y = y_relative;
-            lineno_rect.w = 0;
-            lineno_rect.h = line_height;
-        }
-
-        SDL_Rect line_rect;
-        line_rect.x = lineno_rect.x + lineno_rect.w;
-        line_rect.y = lineno_rect.y;
-        if (surface == NULL) {
-            line_rect.w = 0;
-            line_rect.h = line_height;
-        } else {
-            line_rect.w = surface->w;
-            line_rect.h = surface->h;
+            switch (tdisp->lineno.v_align) {
+                case TextAlignV_TOP:    pos.y = line_y; break;
+                case TextAlignV_CENTER: pos.y = line_y + (line_height - size.y);     break;
+                case TextAlignV_BOTTOM: pos.y = line_y + (line_height - size.y) / 2; break;
+            }
+            DrawTextEx(font, s, pos, font.baseSize, 
+                       0, tdisp->lineno.fgcolor);
         }
 
         if (tdisp->selection.active) {
             
-            SDL_Rect selection_rect;
-            selection_rect.y = line_rect.y;
-            selection_rect.h = line_rect.h;
+            int sel_x;
+            int sel_w;
 
             size_t selection_head;
             size_t selection_tail;
@@ -444,64 +423,33 @@ void TextDisplay_draw(TextDisplay *tdisp,
             } else if (selection_head <= line.off && line.off + line.len <= selection_tail) {
 
                 /* Whole line is selected */
-                selection_rect.x = line_rect.x;
-                selection_rect.w = line_rect.w;
+                sel_x = line_x + line_num_w;
+                sel_w = getStringRenderWidth(*tdisp->text.font, line.str);
                 something_selected_in_line = true;
 
             } else if (line.off <= selection_head && selection_tail < line.off + line.len) {
                 
                 /* Selection is fully contained by this line */
-                size_t relative_selection_start = selection_head - line.off;
-                size_t relative_selection_end   = selection_tail   - line.off;
-
-                int w1, w2;
-                char c;
-                c = line.str[relative_selection_start];
-                line.str[relative_selection_start] = '\0';
-                TTF_SizeUTF8(tdisp->text.font, line.str, &w1, NULL);
-                line.str[relative_selection_start] = c;
-
-                c = line.str[relative_selection_end];
-                line.str[relative_selection_end] = '\0';
-                TTF_SizeUTF8(tdisp->text.font, line.str, &w2, NULL);
-                line.str[relative_selection_end] = c;
-
-                selection_rect.x = line_rect.x + w1;
-                selection_rect.w = w2 - w1;
+                int w1 = getSubstringRenderWidth(line, *tdisp->text.font, 0, selection_head - line.off);
+                int w2 = getSubstringRenderWidth(line, *tdisp->text.font, 0, selection_tail - line.off);
+                sel_x = line_x + line_num_w + w1;
+                sel_w = w2 - w1;
                 something_selected_in_line = true;
 
             } else if (line.off < selection_head && line.off + line.len <= selection_tail) {
                 
                 /* Selection goes from the middle of the line 'till the end */
-                
-                size_t relative_selection_start = selection_head - line.off;
-
-                int w;
-                char c;
-                c = line.str[relative_selection_start];
-                line.str[relative_selection_start] = '\0';
-                TTF_SizeUTF8(tdisp->text.font, line.str, &w, NULL);
-                line.str[relative_selection_start] = c;
-
-                selection_rect.x = line_rect.x + w;
-                selection_rect.w = line_rect.w - w;
+                int w = getSubstringRenderWidth(line, *tdisp->text.font, 0, selection_head - line.off);
+                sel_x = line_x + line_num_w + w;
+                sel_w = getStringRenderWidth(*tdisp->text.font, line.str) - w;
                 something_selected_in_line = true;
 
             } else if (selection_head < line.off && selection_tail < line.off + line.len) {
 
                 /* Selection goes from the start to the middle */
-                
-                size_t relative_selection_end = selection_tail - line.off;
-
-                int w;
-                char c;
-                c = line.str[relative_selection_end];
-                line.str[relative_selection_end] = '\0';
-                TTF_SizeUTF8(tdisp->text.font, line.str, &w, NULL);
-                line.str[relative_selection_end] = c;
-
-                selection_rect.x = line_rect.x;
-                selection_rect.w = w;
+                int w = getSubstringRenderWidth(line, *tdisp->text.font, 0, selection_tail - line.off);
+                sel_x = line_x + line_num_w;
+                sel_w = w;
                 something_selected_in_line = true;
 
             } else {
@@ -510,52 +458,36 @@ void TextDisplay_draw(TextDisplay *tdisp,
                 something_selected_in_line = false; // Temporary
             }
 
-            if (something_selected_in_line) {
-                SDL_SetRenderDrawColor(ren, 
-                    tdisp->text.selection_bgcolor.r, 
-                    tdisp->text.selection_bgcolor.g, 
-                    tdisp->text.selection_bgcolor.b, 
-                    tdisp->text.selection_bgcolor.a);
-                SDL_RenderFillRect(ren, &selection_rect);
-            }
-        
-        } else {
-
-            const size_t cursor = tdisp->buffer->gap_offset;
-            if (line.off <= cursor && cursor <= line.off + line.len) {
+            if (something_selected_in_line)
+                DrawRectangle(sel_x, line_y, sel_w, line_height,
+                              tdisp->text.selection_bgcolor);
             
-                // The cursor is in this line.
-                int relative_cursor_x;
-
-                size_t m = cursor - line.off;
-                char c = line.str[m];
-                line.str[m] = '\0';
-                int res = TTF_SizeUTF8(tdisp->text.font, line.str, 
-                                       &relative_cursor_x, NULL);
-                line.str[m] = c;
-                
-                SDL_Rect cursor_rect;
-                cursor_rect.x = line_rect.x + relative_cursor_x;
-                cursor_rect.y = line_rect.y;
-                cursor_rect.w = 3;
-                cursor_rect.h = line_height;
-                SDL_SetRenderDrawColor(ren, 
-                    tdisp->cursor.bgcolor.r, 
-                    tdisp->cursor.bgcolor.g, 
-                    tdisp->cursor.bgcolor.b, 
-                    tdisp->cursor.bgcolor.a);
-                SDL_RenderFillRect(ren, &cursor_rect);
-            }
         }
 
-        if (surface != NULL) {
-            SDL_Texture *texture = SDL_CreateTextureFromSurface(ren, surface);
-            if (texture != NULL) {
-                SDL_RenderCopy(ren, texture, NULL, &line_rect);
-                SDL_DestroyTexture(texture);
-            } else
-                fprintf(stderr, "WARNING :: Failed to create line texture\n");
-            SDL_FreeSurface(surface);
+        {
+            Font font = *tdisp->text.font;
+            Vector2 pos = {
+                .x = line_x + line_num_w, 
+                .y = line_y
+            };
+            DrawTextEx(font, line.str, pos, 
+                       font.baseSize, 0, 
+                       tdisp->text.fgcolor);
+        }
+
+        {
+            const size_t cursor = tdisp->buffer->gap_offset;
+            if (line.off <= cursor && cursor <= line.off + line.len) {
+                /* The cursor is in this line */
+                int relative_cursor_x = getSubstringRenderWidth(line, *tdisp->text.font, 0, cursor - line.off);
+                DrawRectangle(
+                    line_x + line_num_w + relative_cursor_x,
+                    line_y,
+                    3,
+                    line_height,
+                    tdisp->cursor.bgcolor
+                );
+            }
         }
 
         y_relative += line_height;
@@ -563,14 +495,10 @@ void TextDisplay_draw(TextDisplay *tdisp,
     }
     GapBufferIter_free(&iter);
 
-    SDL_SetRenderDrawColor(ren, 
-        0xff, 0x00, 0x00, 0xff);
-    SDL_RenderDrawRect(ren, NULL);
-
     // Vertical scrollbar
     {
-        SDL_Rect abs_scrollbar, abs_thumb;
-        SDL_Rect rel_scrollbar, rel_thumb;
+        Rectangle abs_scrollbar, abs_thumb;
+        Rectangle rel_scrollbar, rel_thumb;
         getVerticalScrollbarPosition(tdisp, &abs_scrollbar, &abs_thumb);
 
         rel_scrollbar = abs_scrollbar;
@@ -579,8 +507,8 @@ void TextDisplay_draw(TextDisplay *tdisp,
         rel_thumb = abs_thumb;
         rel_thumb.x -= tdisp->x;
         rel_thumb.y -= tdisp->y;
-        SDL_RenderFillRect(ren, &rel_thumb);
+        DrawRectangle(rel_thumb.x, rel_thumb.y,
+                      rel_thumb.width, rel_thumb.height,
+                      RED);
     }
-
-    SDL_RenderSetViewport(ren, NULL);
 }

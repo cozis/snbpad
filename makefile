@@ -1,11 +1,12 @@
-#-fsanitize=address -g
+LIB_PATH = raylib-4.2.0_linux_amd64/lib
+INC_PATH = raylib-4.2.0_linux_amd64/include
 
-CFLAGS = -Wall -Wextra
-LFLAGS = -Wl,-rpath,.
+CFLAGS = -Wall -Wextra -L$(LIB_PATH) -I$(INC_PATH)
+LFLAGS = -l:libraylib.a -lm
 
 all: snbpad
 
-snbpad: libSDL2_ttf.so libSDL2-2.0.so snbpad.c gap.c gapiter.c textdisplay.c xutf8.c
+snbpad: snbpad.c gap.c gapiter.c textdisplay.c xutf8.c
 	gcc $^ -o $@ $(CFLAGS) $(LFLAGS)
 
 clean:

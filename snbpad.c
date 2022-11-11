@@ -1,7 +1,7 @@
+#include <time.h>
 #include <stdio.h>
 #include <assert.h>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
+#include <raylib.h>
 #include "gap.h"
 #include "gapiter.h"
 #include "utils.h"
@@ -12,23 +12,12 @@ static void save(const char *file,
 {
     FILE *stream = fopen(file, "wb");
     if (stream == NULL) {
-        fprintf(stderr, "WARNING :: Failed to open \"%s\" in write mode\n", file);
+        TraceLog(LOG_WARNING, "Failed to open \"%s\" in write mode\n", file);
     } else {
         if (!GapBuffer_saveToStream(buffer, stream))
-            fprintf(stderr, "WARNING :: Failed to save to \"%s\"\n", file);
+            TraceLog(LOG_WARNING, "Failed to save to \"%s\"\n", file);
         fclose(stream);
     }
-}
-
-static bool fileExists(const char *file)
-{
-    // Hacky but cross-platform!
-    FILE *stream = fopen(file, "r"); 
-    if (stream != NULL) {
-        fclose(stream);
-        return true;
-    }
-    return false;
 }
 
 static bool determineFileName(char *dst, size_t dstmax)
@@ -39,7 +28,7 @@ static bool determineFileName(char *dst, size_t dstmax)
         int k = snprintf(dst, dstmax, "unnamed-%d.txt", attempt);
         if (k < 0 || (size_t) k >= dstmax)
             return false;
-    } while (fileExists(dst));
+    } while (FileExists(dst));
     return true;
 }
 
@@ -50,63 +39,37 @@ void snbpad(const char *file, int w, int h)
     char file_fallback[256];
     if (file == NULL) {
         if (!determineFileName(file_fallback, sizeof(file_fallback))) {
-            fprintf(stderr, "ERROR :: Couldn't determine a valid file name\n");
+            TraceLog(LOG_ERROR, "Couldn't determine a valid file name");
             return;
         }
         file = file_fallback;
         file_doesnt_exist_yet = true;
     } else
-        file_doesnt_exist_yet = !fileExists(file);
+        file_doesnt_exist_yet = !FileExists(file);
 
     if (w < 0) w = 300;
     if (h < 0) h = 400;
 
-    if (SDL_Init(SDL_INIT_VIDEO))
-        return;
-
     char caption[256];
-    snprintf(caption, sizeof(caption), "SnBpad - %s", file);
-
-    int flags = SDL_WINDOW_RESIZABLE;
-    SDL_Window *win = SDL_CreateWindow(caption, SDL_WINDOWPOS_UNDEFINED, 
-                                       SDL_WINDOWPOS_UNDEFINED, w, h, flags);
-    if (win == NULL) {
-        SDL_Quit();
+    snprintf(caption, sizeof(caption), 
+             "SnBpad - %s", file);
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    InitWindow(w, h, caption);
+    if (!IsWindowReady()) {
+        TraceLog(LOG_ERROR, "Failed to create window");
         return;
     }
 
-    SDL_Renderer *ren = SDL_CreateRenderer(win, -1, 0);
-    if (ren == NULL) {
-        SDL_DestroyWindow(win);
-        SDL_Quit();
-        return;
-    }
-
-    if (TTF_Init()) {
-        SDL_DestroyRenderer(ren);
-        SDL_DestroyWindow(win);
-        SDL_Quit();
-        return;
-    }
-
-    const char *font_file = "/usr/share/fonts/TTF/Inconsolata-Medium.ttf"; //"Monaco_5.1.ttf";
-    size_t      font_size = 30;
-    TTF_Font *font = TTF_OpenFont(font_file, font_size);
-    if (font == NULL) {
-        TTF_Quit();
-        SDL_DestroyRenderer(ren);
-        SDL_DestroyWindow(win);
-        SDL_Quit();
-        return;
-    }
+    const char *font_file = "/usr/share/fonts/TTF/Inconsolata-Medium.ttf";
+    Font font = LoadFont(font_file);
 
     GapBuffer buffer;
     if (file_doesnt_exist_yet)
         GapBuffer_initEmpty(&buffer);
     else {
         if (!GapBuffer_initFile(&buffer, file)) {
+            TraceLog(LOG_WARNING, "Failed to load \"%s\"", file);
             GapBuffer_initEmpty(&buffer);
-            fprintf(stderr, "WARNING :: Failed to load \"%s\"\n", file);
         }
     }
 
@@ -120,7 +83,7 @@ void snbpad(const char *file, int w, int h)
             .nobg = false,
             .fgcolor = {0x00, 0x00, 0x00, 0xff},
             .bgcolor = {0xcc, 0xcc, 0xcc, 0xff},
-            .font = font,
+            .font = &font,
             .auto_width = false,
             .width = 70,
             .h_align = TextAlignH_CENTER,
@@ -128,8 +91,9 @@ void snbpad(const char *file, int w, int h)
         },
         .text = {
             .nobg = true,
-            .font = font,
-            .selection_bgcolor = {0xcc, 0xcc, 0xcc, 0xff},
+            .font = &font,
+            .fgcolor = {0x00, 0x00, 0x00, 0xff},
+            .selection_bgcolor = {0xcc, 0xcc, 0xff, 0xff},
         },
         .cursor = {
             .bgcolor = {0x00, 0x00, 0x00, 0xff},
@@ -149,91 +113,124 @@ void snbpad(const char *file, int w, int h)
         .buffer = &buffer,
     };
 
-    bool lcontrol = false;
-    bool rcontrol = false;
-    bool quitting = false;
-    while (!quitting) {
+    int arrow_press_interval = 70;
+
+    SetTraceLogLevel(LOG_WARNING);
+
+    const int fps = 60;
+    const int ms_per_frame = 1000 / fps;
+    bool mouse_button_left_was_pressed = false;
+    bool arrow_left_was_pressed = false;
+    bool arrow_right_was_pressed = false;
+    int left_arrow_counter = 0;
+    int right_arrow_counter = 0;
+    SetTargetFPS(fps);
+    while (!WindowShouldClose()) {
         
         TextDisplay_tick(&tdisp);
 
-        SDL_Event event;
-        while (!quitting && SDL_PollEvent(&event)) {
-            switch (event.type) {
-                case SDL_QUIT: quitting = true; break;
-                
-                case SDL_WINDOWEVENT:
-                switch (event.window.event) {
-                    case SDL_WINDOWEVENT_RESIZED:
-                    case SDL_WINDOWEVENT_SIZE_CHANGED:
-                    tdisp.w = event.window.data1 - 40;
-                    tdisp.h = event.window.data2 - 40;
-                    break;
-                }
-                break;
+        if (IsWindowResized()) {
+            tdisp.w = GetScreenWidth()  - 40;
+            tdisp.h = GetScreenHeight() - 40;
+        }
 
-                case SDL_TEXTINPUT: TextDisplay_onTextInput(&tdisp, event.text.text, strlen(event.text.text)); break;
-                case SDL_MOUSEWHEEL: TextDisplay_onMouseWheel(&tdisp, event.wheel.y); break;
+        TextDisplay_onMouseMotion(&tdisp, GetMouseX(), GetMouseY());
 
-                case SDL_KEYDOWN:
-                {
-                    SDL_Keycode code = event.key.keysym.sym;
-                    if (lcontrol || rcontrol) {
-                        switch (code) {
-                            case SDLK_LCTRL: lcontrol = true; break;
-                            case SDLK_RCTRL: rcontrol = true; break;
-                            case SDLK_c: TextDisplay_onCopy(&tdisp); break;
-                            case SDLK_x: TextDisplay_onCut(&tdisp); break;
-                            case SDLK_v: TextDisplay_onPaste(&tdisp); break;
-                            case SDLK_s: save(file, &buffer); break;
-                        }
-                    } else {
-                        switch (code) {
-                            case SDLK_LCTRL: lcontrol = true; break;
-                            case SDLK_RCTRL: rcontrol = true; break;
-                            case SDLK_LEFT:
-                            case SDLK_RIGHT:     TextDisplay_onArrowDown(&tdisp, code); break;
-                            case SDLK_TAB:       TextDisplay_onTabDown(&tdisp); break;
-                            case SDLK_RETURN:    TextDisplay_onReturnDown(&tdisp); break;
-                            case SDLK_BACKSPACE: TextDisplay_onBackspaceDown(&tdisp); break;
-                        }
-                    }
-                }
-                break;
-                
-                case SDL_KEYUP:
-                switch (event.key.keysym.sym) {
-                    case SDLK_LCTRL: lcontrol = false; break;
-                    case SDLK_RCTRL: rcontrol = false; break;
-                }
-                break;
+        bool mouse_button_left_is_pressed = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+        if (mouse_button_left_is_pressed && !mouse_button_left_was_pressed)
+            TextDisplay_onClickDown(&tdisp, GetMouseX(), GetMouseY());
+        else if (!mouse_button_left_is_pressed && mouse_button_left_was_pressed)
+            TextDisplay_onClickUp(&tdisp, GetMouseX(), GetMouseY());
+        mouse_button_left_was_pressed = mouse_button_left_is_pressed;
 
-                case SDL_MOUSEMOTION: TextDisplay_onMouseMotion(&tdisp, event.motion.x, event.motion.y); break;
-                case SDL_MOUSEBUTTONDOWN:
-                switch (event.button.button) {
-                    case SDL_BUTTON_LEFT: TextDisplay_onClickDown(&tdisp, event.button.x, event.button.y); break;
+        Vector2 motion = GetMouseWheelMoveV();
+        TextDisplay_onMouseWheel(&tdisp, 5 * motion.y);
+
+        if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL)) {
+            
+            if (IsKeyPressed(KEY_C))
+                TextDisplay_onCopy(&tdisp);
+            
+            if (IsKeyPressed(KEY_X))
+                TextDisplay_onCut(&tdisp);
+            
+            if (IsKeyPressed(KEY_V))
+                TextDisplay_onPaste(&tdisp);
+            
+            if (IsKeyPressed(KEY_S))
+                save(file, &buffer);
+        
+        } else {
+
+            bool arrow_left_is_pressed = IsKeyDown(KEY_LEFT);
+            if (arrow_left_is_pressed) {
+                if (!arrow_left_was_pressed) {
+                    TextDisplay_onArrowLeftDown(&tdisp);
+                    left_arrow_counter = 0;
+                } else {
+                    if (left_arrow_counter * ms_per_frame > arrow_press_interval) {
+                        TextDisplay_onArrowLeftDown(&tdisp);
+                        left_arrow_counter = 0;
+                    } else
+                        left_arrow_counter++;
                 }
-                break;
-                case SDL_MOUSEBUTTONUP:
-                switch (event.button.button) {
-                    case SDL_BUTTON_LEFT: TextDisplay_onClickUp(&tdisp, event.button.x, event.button.y); break;
+            }
+            arrow_left_was_pressed = arrow_left_is_pressed;
+
+            bool arrow_right_is_pressed = IsKeyDown(KEY_RIGHT);
+            if (arrow_right_is_pressed) {
+                if (!arrow_right_was_pressed) {
+                    TextDisplay_onArrowRightDown(&tdisp);
+                    right_arrow_counter = 0;
+                } else {
+                    if (right_arrow_counter * ms_per_frame > arrow_press_interval) {
+                        TextDisplay_onArrowRightDown(&tdisp);
+                        right_arrow_counter = 0;
+                    } else
+                        right_arrow_counter++;
                 }
-                break;
+            }
+            arrow_right_was_pressed = arrow_right_is_pressed;
+            
+            if (IsKeyPressed(KEY_ENTER))
+                TextDisplay_onReturnDown(&tdisp);
+            
+            if (IsKeyPressed(KEY_BACKSPACE))
+                TextDisplay_onBackspaceDown(&tdisp);
+
+            int key = GetCharPressed();
+            while (key > 0) {
+                TextDisplay_onTextInput2(&tdisp, key);
+                key = GetCharPressed();
             }
         }
-        SDL_SetRenderDrawColor(ren, 
-            0xff, 0xff, 0xff, 0xff);
-        SDL_RenderClear(ren);
-        TextDisplay_draw(&tdisp, ren);
-        SDL_RenderPresent(ren);
-        SDL_Delay(20); 
+
+        RenderTexture2D target = LoadRenderTexture(tdisp.w, tdisp.h);
+        BeginTextureMode(target);
+        TextDisplay_draw(&tdisp);
+        EndTextureMode();
+
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+        Rectangle src, dst;
+        src.x = 0;
+        src.y = 0;
+        src.width  = tdisp.w;
+        src.height = -tdisp.h;
+        dst.x = tdisp.x;
+        dst.y = tdisp.y;
+        dst.width  = tdisp.w;
+        dst.height = tdisp.h;
+        Vector2 org = {0, 0};
+        DrawTexturePro(target.texture, src, 
+                       dst, org, 0, WHITE);
+        EndDrawing();
+        UnloadRenderTexture(target);
     }
     GapBuffer_free(&buffer);
 
-    TTF_CloseFont(font);
-    TTF_Quit();
-    SDL_DestroyRenderer(ren);
-    SDL_DestroyWindow(win);
-    SDL_Quit();
+    UnloadFont(font);
+    CloseWindow();
 }
 
 int main(int argc, char **argv)
