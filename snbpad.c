@@ -7,84 +7,51 @@
 #include "utils.h"
 #include "textdisplay.h"
 
-static void save(const char *file, 
-                 GapBuffer *buffer)
+void evaluateLeftBufferRegion(Rectangle *region, 
+                              int win_w, int win_h)
 {
-    FILE *stream = fopen(file, "wb");
-    if (stream == NULL) {
-        TraceLog(LOG_WARNING, "Failed to open \"%s\" in write mode\n", file);
-    } else {
-        if (!GapBuffer_saveToStream(buffer, stream))
-            TraceLog(LOG_WARNING, "Failed to save to \"%s\"\n", file);
-        fclose(stream);
-    }
+    *region = (Rectangle) {
+        .x = 10, 
+        .y = 20, 
+        .width  = (win_w - 30) / 2, 
+        .height = win_h - 40,
+    };
 }
 
-static bool determineFileName(char *dst, size_t dstmax)
+void evaluateRightBufferRegion(Rectangle *region, 
+                               int win_w, int win_h)
 {
-    int attempt = -1;
-    do {
-        attempt++;
-        int k = snprintf(dst, dstmax, "unnamed-%d.txt", attempt);
-        if (k < 0 || (size_t) k >= dstmax)
-            return false;
-    } while (FileExists(dst));
-    return true;
+    *region = (Rectangle) {
+        .x = (win_w - 30) / 2 + 20, 
+        .y = 20, 
+        .width  = (win_w - 30) / 2,
+        .height = win_h - 40,
+    };
 }
 
-void snbpad(const char *file, int w, int h)
+void snbpad()
 {
-    bool file_doesnt_exist_yet;
+    int w = 300;
+    int h = 400;
 
-    char file_fallback[256];
-    if (file == NULL) {
-        if (!determineFileName(file_fallback, sizeof(file_fallback))) {
-            TraceLog(LOG_ERROR, "Couldn't determine a valid file name");
-            return;
-        }
-        file = file_fallback;
-        file_doesnt_exist_yet = true;
-    } else
-        file_doesnt_exist_yet = !FileExists(file);
-
-    if (w < 0) w = 300;
-    if (h < 0) h = 400;
-
-    char caption[256];
-    snprintf(caption, sizeof(caption), 
-             "SnBpad - %s", file);
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-    InitWindow(w, h, caption);
+    InitWindow(w, h, "SnBpad");
     if (!IsWindowReady()) {
-        TraceLog(LOG_ERROR, "Failed to create window");
+        TraceLog(LOG_FATAL, "Failed to create window");
         return;
     }
 
     const char *font_file = "/usr/share/fonts/TTF/Inconsolata-Medium.ttf";
     Font font = LoadFont(font_file);
 
-    GapBuffer buffer;
-    if (file_doesnt_exist_yet)
-        GapBuffer_initEmpty(&buffer);
-    else {
-        if (!GapBuffer_initFile(&buffer, file)) {
-            TraceLog(LOG_WARNING, "Failed to load \"%s\"", file);
-            GapBuffer_initEmpty(&buffer);
-        }
-    }
-
-    TextDisplay tdisp = {
-        .x = 0,
-        .y = 0,
-        .w = w,
-        .h = h,
+    TextDisplayStyle style = {
         .lineno = {
             .hide = false,
-            .nobg = true,
+            .nobg = false,
             .fgcolor = {0xcc, 0xcc, 0xcc, 0xff},
             .bgcolor = {0x33, 0x33, 0x33, 0xff},
             .font = &font,
-            .auto_width = true,
+            .auto_width = false,
             .width = 60,
             .h_align = TextAlignH_RIGHT,
             .v_align = TextAlignV_CENTER,
@@ -94,32 +61,48 @@ void snbpad(const char *file, int w, int h)
             .padding_right = 10,
         },
         .text = {
-            .nobg = true,
+            .nobg = false,
             .font = &font,
-            .fgcolor = {0x00, 0x00, 0x00, 0xff},
+            .bgcolor = {0xff, 0xff, 0xff, 0xff},
+            .fgcolor = {0x33, 0x33, 0x33, 0xff},
             .selection_bgcolor = {0xcc, 0xcc, 0xff, 0xff},
         },
         .cursor = {
-            .bgcolor = {0x00, 0x00, 0x00, 0xff},
+            .bgcolor = {0xbb, 0xbb, 0xbb, 0xff},
         },
-        .v_scroll = {
+        .scroll = {
             .inertia = 10,
-            .force = 0,
-            .amount = 0,
-            .start_amount = 0,
-            .active = false,
-            .start_cursor = 0,
         },
         .scrollbar_size = 20,
         .auto_line_height = true,
-        .selecting = false,
-        .selection.active = false,
-        .buffer = &buffer,
     };
+
+    GUIElement *elements[32]; 
+    size_t element_count = 0;
+
+    {
+        Rectangle region;
+        evaluateLeftBufferRegion(&region, w, h);
+        GUIElement *tdisplay = TextDisplay_new(region, "Left-buffer", NULL, &style);
+        if (tdisplay == NULL)
+            return;
+        
+        elements[element_count++] = tdisplay;
+    }
+
+    {
+        Rectangle region;
+        evaluateRightBufferRegion(&region, w, h);
+        GUIElement *tdisplay = TextDisplay_new(region, "Right-Buffer", NULL, &style);
+        if (tdisplay == NULL)
+            return;
+        
+        elements[element_count++] = tdisplay;
+    }
 
     int arrow_press_interval = 70;
 
-    SetTraceLogLevel(LOG_WARNING);
+    SetTraceLogLevel(LOG_DEBUG);
 
     const int fps = 60;
     const int ms_per_frame = 1000 / fps;
@@ -129,110 +112,224 @@ void snbpad(const char *file, int w, int h)
     int left_arrow_counter = 0;
     int right_arrow_counter = 0;
     SetTargetFPS(fps);
+
+    GUIElement *focused = NULL;
+    GUIElement *last_focused = NULL;
     while (!WindowShouldClose()) {
-        
-        TextDisplay_tick(&tdisp);
+
+        for (size_t i = 0; i < element_count; i++)
+            GUIElement_tick(elements[i]);
 
         if (IsWindowResized()) {
-            tdisp.w = GetScreenWidth();
-            tdisp.h = GetScreenHeight();
+            w = GetScreenWidth();
+            h = GetScreenHeight();
+            evaluateLeftBufferRegion(&elements[0]->region, w, h);
+            evaluateRightBufferRegion(&elements[1]->region, w, h);
         }
 
-        TextDisplay_onMouseMotion(&tdisp, GetMouseX(), GetMouseY());
+        GUIElement *hovered = NULL;
+
+        Vector2 cursor_point = {GetMouseX(), GetMouseY()};
+        for (size_t i = 0; i < element_count && hovered == NULL; i++)
+            if (CheckCollisionPointRec(cursor_point, elements[i]->region))
+                hovered = elements[i];
+
+        if (hovered != NULL) {
+
+            Vector2 motion = GetMouseWheelMoveV();
+            GUIElement_onMouseWheel(hovered, 5 * motion.y);
+        }
+
+        for (size_t i = 0; i < element_count; i++)
+            GUIElement_onMouseMotion(elements[i], 
+                cursor_point.x - elements[i]->region.x, 
+                cursor_point.y - elements[i]->region.y);
 
         bool mouse_button_left_is_pressed = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
-        if (mouse_button_left_is_pressed && !mouse_button_left_was_pressed)
-            TextDisplay_onClickDown(&tdisp, GetMouseX(), GetMouseY());
-        else if (!mouse_button_left_is_pressed && mouse_button_left_was_pressed)
-            TextDisplay_onClickUp(&tdisp, GetMouseX(), GetMouseY());
-        mouse_button_left_was_pressed = mouse_button_left_is_pressed;
+        if (mouse_button_left_is_pressed && !mouse_button_left_was_pressed) {
+            
+            if (hovered != NULL) {
+                GUIElement_onClickDown(hovered, 
+                    cursor_point.x - hovered->region.x, 
+                    cursor_point.y - hovered->region.y);
+                if (hovered != focused) {
+                    if (GUIElement_allowsFocus(hovered)) {
+                        if (focused == NULL) {
+                            TraceLog(LOG_INFO, "Element [%s] gained focus", 
+                                     hovered->name);
+                        } else {
+                            TraceLog(LOG_INFO, "Focus changed from element [%s] to [%s]", 
+                                     focused->name, hovered->name);
+                        }
+                        last_focused = hovered;
+                        focused = hovered;
+                    } else {
+                        TraceLog(LOG_INFO, "Element [%s] lost focus", 
+                                 focused->name);
+                        focused = NULL;
+                    }
+                }
+            } else {
+                if (focused != NULL) {
+                    TraceLog(LOG_INFO, "Element [%s] lost focus", 
+                             focused->name);
+                    focused = NULL;
+                }
+            }
 
-        Vector2 motion = GetMouseWheelMoveV();
-        TextDisplay_onMouseWheel(&tdisp, 5 * motion.y);
+            for (size_t i = 0; i < element_count; i++)
+                if (elements[i] != hovered)
+                    GUIElement_offClickDown(elements[i]);
+
+        } else if (!mouse_button_left_is_pressed && mouse_button_left_was_pressed) {
+            for (size_t i = 0; i < element_count; i++) {
+                Vector2 fake = {
+                    .x = cursor_point.x - elements[i]->region.x,
+                    .y = cursor_point.y - elements[i]->region.y,
+                };
+                if (elements[i] != hovered) {
+                    fake.x = MAX(fake.x, 0);
+                    fake.x = MIN(fake.x, elements[i]->region.width);
+                    fake.y = MAX(fake.y, 0);
+                    fake.y = MIN(fake.y, elements[i]->region.height);
+                }
+                GUIElement_clickUp(elements[i], fake.x, fake.y);
+            }
+        }
+        mouse_button_left_was_pressed = mouse_button_left_is_pressed;
 
         if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL)) {
             
-            if (IsKeyPressed(KEY_C))
-                TextDisplay_onCopy(&tdisp);
+            if (last_focused != NULL) {
+                if (IsKeyPressed(KEY_S))
+                    GUIElement_onSave(last_focused);
+            }
             
-            if (IsKeyPressed(KEY_X))
-                TextDisplay_onCut(&tdisp);
-            
-            if (IsKeyPressed(KEY_V))
-                TextDisplay_onPaste(&tdisp);
-            
-            if (IsKeyPressed(KEY_S))
-                save(file, &buffer);
+            if (focused != NULL) {
+
+                if (IsKeyPressed(KEY_O))
+                    GUIElement_onOpen(focused);
+
+                if (IsKeyPressed(KEY_C))
+                    GUIElement_onCopy(focused);
+                
+                if (IsKeyPressed(KEY_X))
+                    GUIElement_onCut(focused);
+                
+                if (IsKeyPressed(KEY_V))
+                    GUIElement_onPaste(focused);
+            }
         
         } else {
 
+            bool trigger_left_arrow;
             bool arrow_left_is_pressed = IsKeyDown(KEY_LEFT);
             if (arrow_left_is_pressed) {
                 if (!arrow_left_was_pressed) {
-                    TextDisplay_onArrowLeftDown(&tdisp);
+                    trigger_left_arrow = true;
                     left_arrow_counter = 0;
                 } else {
                     if (left_arrow_counter * ms_per_frame > arrow_press_interval) {
-                        TextDisplay_onArrowLeftDown(&tdisp);
+                        trigger_left_arrow = true;
                         left_arrow_counter = 0;
-                    } else
+                    } else {
+                        trigger_left_arrow = false;
                         left_arrow_counter++;
+                    }
                 }
-            }
+            } else
+                trigger_left_arrow = false;
             arrow_left_was_pressed = arrow_left_is_pressed;
 
+            bool trigger_right_arrow;
             bool arrow_right_is_pressed = IsKeyDown(KEY_RIGHT);
             if (arrow_right_is_pressed) {
                 if (!arrow_right_was_pressed) {
-                    TextDisplay_onArrowRightDown(&tdisp);
+                    trigger_right_arrow = true;
                     right_arrow_counter = 0;
                 } else {
                     if (right_arrow_counter * ms_per_frame > arrow_press_interval) {
-                        TextDisplay_onArrowRightDown(&tdisp);
+                        trigger_right_arrow = true;
                         right_arrow_counter = 0;
-                    } else
+                    } else {
+                        trigger_right_arrow = false;
                         right_arrow_counter++;
+                    }
                 }
-            }
+            } else
+                trigger_right_arrow = false;
             arrow_right_was_pressed = arrow_right_is_pressed;
-            
-            if (IsKeyPressed(KEY_ENTER))
-                TextDisplay_onReturnDown(&tdisp);
-            
-            if (IsKeyPressed(KEY_BACKSPACE))
-                TextDisplay_onBackspaceDown(&tdisp);
 
-            int key = GetCharPressed();
-            while (key > 0) {
-                TextDisplay_onTextInput2(&tdisp, key);
-                key = GetCharPressed();
+            if (focused != NULL) {
+
+                if (trigger_left_arrow)
+                    GUIElement_onArrowLeftDown(focused);
+
+                if (trigger_right_arrow)
+                    GUIElement_onArrowRightDown(focused);
+
+                if (IsKeyPressed(KEY_ENTER))
+                    GUIElement_onReturnDown(focused);
+            
+                if (IsKeyPressed(KEY_BACKSPACE))
+                    GUIElement_onBackspaceDown(focused);
+            
+                int key = GetCharPressed();
+                while (key > 0) {
+                    GUIElement_onTextInput2(focused, key);
+                    key = GetCharPressed();
+                }
             }
         }
 
-        RenderTexture2D target = LoadRenderTexture(tdisp.w, tdisp.h);
-        BeginTextureMode(target);
-        TextDisplay_draw(&tdisp);
-        EndTextureMode();
+        SetTraceLogLevel(LOG_WARNING);
+
+        RenderTexture2D targets[32];
+        size_t target_count = 0;
+
+        for (size_t i = 0; i < element_count; i++) {
+            
+            GUIElement *elem = elements[i];
+            Rectangle region = elem->region;
+
+            RenderTexture2D target = LoadRenderTexture(region.width, region.height);
+            BeginTextureMode(target);
+            GUIElement_draw(elem);
+            EndTextureMode();
+
+            targets[target_count++] = target;
+        }
 
         BeginDrawing();
         ClearBackground(RAYWHITE);
-        Rectangle src, dst;
-        src.x = 0;
-        src.y = 0;
-        src.width  = tdisp.w;
-        src.height = -tdisp.h;
-        dst.x = tdisp.x;
-        dst.y = tdisp.y;
-        dst.width  = tdisp.w;
-        dst.height = tdisp.h;
-        Vector2 org = {0, 0};
-        DrawTexturePro(target.texture, src, 
-                       dst, org, 0, WHITE);
-        EndDrawing();
-        UnloadRenderTexture(target);
-    }
-    GapBuffer_free(&buffer);
 
+        for (size_t i = 0; i < element_count; i++) {
+            
+            GUIElement *elem = elements[i];
+            Rectangle region = elem->region;
+
+            Rectangle src, dst;
+            src.x = 0;
+            src.y = 0;
+            src.width  =  region.width;
+            src.height = -region.height;
+            dst.x = region.x;
+            dst.y = region.y;
+            dst.width  = region.width;
+            dst.height = region.height;
+            Vector2 org = {0, 0};
+            DrawTexturePro(targets[i].texture, src, 
+                           dst, org, 0, WHITE);
+        }
+        EndDrawing();
+
+        for (size_t i = 0; i < element_count; i++)
+            UnloadRenderTexture(targets[i]);
+
+        SetTraceLogLevel(LOG_DEBUG);
+    }
+    for (size_t i = 0; i < element_count; i++)
+        GUIElement_free(elements[i]);
     UnloadFont(font);
     CloseWindow();
 }
