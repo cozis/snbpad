@@ -1,8 +1,8 @@
 LIB_PATH = raylib-4.2.0_linux_amd64/lib
 INC_PATH = raylib-4.2.0_linux_amd64/include
 
-CFLAGS = -Wall -Wextra -L$(LIB_PATH) -I$(INC_PATH)
-LFLAGS = -l:libraylib.a -lm
+CFLAGS = -Wall -Wextra -L$(LIB_PATH) -I$(INC_PATH) -g -fsanitize=address
+LFLAGS = -l:libraylib.a -lm -fsanitize=address
 
 all: snbpad
 

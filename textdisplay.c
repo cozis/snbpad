@@ -5,6 +5,25 @@
 #include "xutf8.h"
 #include "gapiter.h"
 #include "textdisplay.h"
+/*
+typedef struct {
+    Slice *line;
+    size_t cur;
+} LineTagger;
+
+typedef struct {
+    Color fgcolor;
+    Color bgcolor;
+    size_t offset;
+    size_t length;
+} Tag;
+
+void LineTagger_init(LineTagger *tagger, Slice *line);
+void LineTagger_free(LineTagger *tagger);
+bool LineTagger_next(LineTagger *tagger, Tag *tag);
+
+void 
+*/
 
 void Selection_getSlice(Selection selection,
                         size_t *offset,
@@ -53,6 +72,42 @@ TextDisplay_getLinenoColumnWidth(TextDisplay *tdisp)
          + tdisp->lineno.padding_right;
 }
 
+size_t longestSubstringThatRendersInLessPixelsThan(Font font, const char *str, size_t len, size_t max_px_len)
+{
+    if (str == NULL)
+        str = "";
+
+    size_t w = 0;
+    size_t i = 0;
+    while (i < len) {
+
+        int consumed;
+        int letter = GetCodepoint(str + i, &consumed);
+        int glyph_index = GetGlyphIndex(font, letter);
+
+        if (letter == 0x3f)
+            i++;
+        else
+            i += consumed;
+
+        int delta;
+
+        int advanceX = font.glyphs[glyph_index].advanceX;
+        if (advanceX)
+            delta = advanceX;
+        else
+            delta = font.recs[glyph_index].width 
+                  + font.glyphs[glyph_index].offsetX;
+        
+        assert(delta >= 0);
+        if (w + delta > max_px_len)
+            break;
+
+        w += delta;
+    }
+    return i;
+}
+
 static size_t 
 cursorFromClick(TextDisplay *tdisp,
                 int x, int y)
@@ -70,43 +125,14 @@ cursorFromClick(TextDisplay *tdisp,
     unsigned int lineno_colm_w = TextDisplay_getLinenoColumnWidth(tdisp);
 
     Font font = *tdisp->text.font;
-    Vector2 size = MeasureTextEx(font, line.str, (int) font.baseSize, 0);
-    int line_w = size.x;
-
-    int cur;
+    size_t cursor;
     if (x - tdisp->x < (int) lineno_colm_w)
-        cur = line.off;
-    else if (x - tdisp->x > (int) lineno_colm_w + line_w)
-        cur = line.off + line.len;
-    else {
-        int lo = 0;
-        int hi = line.len;
-        while (lo < hi-1) {
+        cursor = line.off;
+    else
+        cursor = line.off + longestSubstringThatRendersInLessPixelsThan(font, line.str, line.len, x - tdisp->x - lineno_colm_w);
 
-            // NOTE: This won't work if [m] doesn't refer
-            //       to the first byte of a multibyte utf8
-            //       symbol!!
-            int m = (lo + hi) / 2;
-
-            int mx;
-            {
-                char c = line.str[m];
-                line.str[m] = '\0';
-                Font font = *tdisp->text.font;
-                Vector2 size = MeasureTextEx(font, line.str, (int) font.baseSize, 0);
-                mx = size.x;
-                line.str[m] = c;
-            }
-
-            if ((int) lineno_colm_w + mx < x - tdisp->x) 
-                lo = m;
-            else
-                hi = m;
-        }
-        cur = line.off + lo;
-    }
     GapBufferIter_free(&iter);
-    return cur;
+    return cursor;
 }
 
 static unsigned int 
@@ -421,63 +447,22 @@ void TextDisplay_draw(TextDisplay *tdisp)
 
         if (tdisp->selection.active) {
             
-            int sel_x;
-            int sel_w;
+            size_t sel_abs_off, sel_len;
+            Selection_getSlice(tdisp->selection, &sel_abs_off, &sel_len);
+            int sel_rel_off = sel_abs_off - line.off;
 
-            size_t selection_head;
-            size_t selection_tail;
-            Selection_getSlice(tdisp->selection, &selection_head, &selection_tail);
-            selection_tail += selection_head;
+            if (sel_abs_off < line.off + line.len && sel_abs_off + sel_len > line.off) {
 
-            bool something_selected_in_line;
-            
-            if (line.off > selection_tail || line.off + line.len < selection_head) {
-            
-                /* Nothing was selected from this line */
-                something_selected_in_line = false;
-            
-            } else if (selection_head <= line.off && line.off + line.len <= selection_tail) {
-
-                /* Whole line is selected */
-                sel_x = line_x + line_num_w;
-                sel_w = getStringRenderWidth(*tdisp->text.font, line.str);
-                something_selected_in_line = true;
-
-            } else if (line.off <= selection_head && selection_tail < line.off + line.len) {
+                size_t rel_head = MAX(sel_rel_off, 0);
+                size_t rel_tail = MIN(sel_rel_off + sel_len, line.len);
                 
-                /* Selection is fully contained by this line */
-                int w1 = getSubstringRenderWidth(line, *tdisp->text.font, 0, selection_head - line.off);
-                int w2 = getSubstringRenderWidth(line, *tdisp->text.font, 0, selection_tail - line.off);
-                sel_x = line_x + line_num_w + w1;
-                sel_w = w2 - w1;
-                something_selected_in_line = true;
-
-            } else if (line.off < selection_head && line.off + line.len <= selection_tail) {
-                
-                /* Selection goes from the middle of the line 'till the end */
-                int w = getSubstringRenderWidth(line, *tdisp->text.font, 0, selection_head - line.off);
-                sel_x = line_x + line_num_w + w;
-                sel_w = getStringRenderWidth(*tdisp->text.font, line.str) - w;
-                something_selected_in_line = true;
-
-            } else if (selection_head < line.off && selection_tail < line.off + line.len) {
-
-                /* Selection goes from the start to the middle */
-                int w = getSubstringRenderWidth(line, *tdisp->text.font, 0, selection_tail - line.off);
-                sel_x = line_x + line_num_w;
-                sel_w = w;
-                something_selected_in_line = true;
-
-            } else {
-                //assert(0); // All of the previous conditions
-                           // must be mutually exclusive.
-                something_selected_in_line = false; // Temporary
-            }
-
-            if (something_selected_in_line)
+                Font font = *tdisp->text.font;
+                int sel_w = getSubstringRenderWidth(line, font, rel_head, rel_tail - rel_head);
+                int sel_x = getSubstringRenderWidth(line, font, 0,        rel_head)
+                          + line_x + line_num_w;
                 DrawRectangle(sel_x, line_y, sel_w, line_height,
                               tdisp->text.selection_bgcolor);
-            
+            }
         }
 
         {

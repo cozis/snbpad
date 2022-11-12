@@ -76,6 +76,9 @@ bool GapBuffer_removeBackwards(GapBuffer *buffer)
     if (buffer->gap_offset == 0)
         return false;
 
+    if (buffer->data[buffer->gap_offset-1] == '\n')
+        buffer->lineno--;
+
     int prev = xutf8_prev(buffer->data, buffer->size, buffer->gap_offset, NULL);
     assert(prev >= 0 && (size_t) prev < buffer->gap_offset);
 

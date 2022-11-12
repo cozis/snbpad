@@ -74,24 +74,24 @@ void snbpad(const char *file, int w, int h)
     }
 
     TextDisplay tdisp = {
-        .x = 20,
-        .y = 20,
-        .w = w - 40,
-        .h = h - 40,
+        .x = 0,
+        .y = 0,
+        .w = w,
+        .h = h,
         .lineno = {
             .hide = false,
-            .nobg = false,
-            .fgcolor = {0x00, 0x00, 0x00, 0xff},
-            .bgcolor = {0xcc, 0xcc, 0xcc, 0xff},
+            .nobg = true,
+            .fgcolor = {0xcc, 0xcc, 0xcc, 0xff},
+            .bgcolor = {0x33, 0x33, 0x33, 0xff},
             .font = &font,
-            .auto_width = false,
+            .auto_width = true,
             .width = 60,
             .h_align = TextAlignH_RIGHT,
             .v_align = TextAlignV_CENTER,
             .padding_up = 0,
             .padding_down = 0,
-            .padding_left = 0,
-            .padding_right = 5,
+            .padding_left = 10,
+            .padding_right = 10,
         },
         .text = {
             .nobg = true,
@@ -134,8 +134,8 @@ void snbpad(const char *file, int w, int h)
         TextDisplay_tick(&tdisp);
 
         if (IsWindowResized()) {
-            tdisp.w = GetScreenWidth()  - 40;
-            tdisp.h = GetScreenHeight() - 40;
+            tdisp.w = GetScreenWidth();
+            tdisp.h = GetScreenHeight();
         }
 
         TextDisplay_onMouseMotion(&tdisp, GetMouseX(), GetMouseY());
