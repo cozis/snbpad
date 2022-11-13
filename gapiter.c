@@ -1,151 +1,100 @@
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
+#include "utils.h"
 #include "gapiter.h"
 
-void GapBufferIter_init(GapBufferIter *iter, GapBuffer *buf)
+void GapBufferIter_init(GapBufferIter *iter, 
+                        GapBuffer *buf)
 {
     iter->buf = buf;
     iter->cur = 0;
-    iter->crossed_gap = false;
-    iter->placed_zero = false;
-    iter->prev_line_maybe = NULL;
-}
-
-static void undoInternalOperations(GapBufferIter *iter)
-{
-    if (iter->placed_zero) {
-        iter->buf->data[iter->zero_offset] = iter->overw_by_zero;
-        iter->placed_zero = false;
-    }
-
-    if (iter->prev_line_maybe != NULL) {
-        free(iter->prev_line_maybe);
-        iter->prev_line_maybe = NULL;
-    }
 }
 
 void GapBufferIter_free(GapBufferIter *iter)
 {
-    undoInternalOperations(iter);
+    (void) iter;
 }
 
-bool GapBufferIter_nextLine(GapBufferIter *iter, Slice *line)
+bool GapBufferIter_nextLine(GapBufferIter *iter, 
+                            Line *line)
 {
-    undoInternalOperations(iter);
+    Line line_fallback;
+    if (line == NULL)
+        line = &line_fallback;
 
-    if (iter->cur == iter->buf->size)
+    char  *s = iter->buf->data;
+    size_t n = iter->buf->size;
+    size_t goff = iter->buf->gap_offset;
+    size_t glen = iter->buf->gap_length;
+    size_t c = iter->cur;
+
+    if (c == n)
         return false;
 
-    if (iter->crossed_gap) {
+    if (c > goff) {
 
-        size_t line_offset = iter->cur; // Offset of the line
-        while (iter->cur < iter->buf->size && iter->buf->data[iter->cur] != '\n')
-            iter->cur++;
-        size_t line_length = iter->cur - line_offset;
+        size_t start = c; // Offset of the line
+        while (c < n && s[c] != '\n') 
+            c++;
 
-        if (iter->cur == iter->buf->size) {
+        line->str = s + start;
+        line->off = start - glen;
+        line->len = c - start;
 
-            if (line != NULL) {
-                char *s = malloc(line_length+1);
-                if (s == NULL) {
-                    line->str = "";
-                    line->off = line_offset - iter->buf->gap_length;
-                    line->len = 0;
-                } else {
-                    memcpy(s, iter->buf->data + line_offset, line_length);
-                    s[line_length] = '\0';
-                    line->str = s;
-                    line->off = line_offset - iter->buf->gap_length;
-                    line->len = line_length;
-                    iter->prev_line_maybe = s;
-                }
-            }
-        } else {
-
-            if (line != NULL) {
-
-                line->str = iter->buf->data + line_offset;
-                line->off = line_offset - iter->buf->gap_length;
-                line->len = line_length;
-
-                // Overwrite \n with \0
-                iter->overw_by_zero = iter->buf->data[iter->cur];
-                iter->placed_zero = true;
-                iter->zero_offset = iter->cur;
-                iter->buf->data[iter->cur] = '\0';
-            }
-
-            iter->cur++; // Skip the \n
-        }
+        if (c < n) 
+            c++; // Skip the \n
 
     } else {
 
-        size_t first_half_offset = iter->cur; // Offset of the line
-        while (iter->cur < iter->buf->gap_offset && iter->buf->data[iter->cur] != '\n')
-            iter->cur++;
-        size_t first_half_length = iter->cur - first_half_offset;
+        size_t first_start = c; // Offset of the line
+        while (c < goff && s[c] != '\n') 
+            c++;
+        size_t first_len = c - first_start;
 
-        if (iter->cur == iter->buf->gap_offset) {
-
-            iter->cur += iter->buf->gap_length; // Skip the gap
-            iter->crossed_gap = true;
-
-            size_t second_half_offset = iter->cur;
-            while (iter->cur < iter->buf->size && iter->buf->data[iter->cur] != '\n')
-                iter->cur++;
-            size_t second_half_length = iter->cur - second_half_offset;
-
-            if (iter->cur < iter->buf->size)
-                iter->cur++; // Consume the \n
-
-            if (line != NULL) {
-                char *s = malloc(first_half_length + second_half_length + 1);
-                if (s == NULL) {
-                    line->str = "";
-                    line->off = first_half_offset;
-                    line->len = 0;
-                } else {
-                    memcpy(s, iter->buf->data + first_half_offset, first_half_length);
-                    memcpy(s + first_half_length, iter->buf->data + second_half_offset, second_half_length);
-                    s[first_half_length + second_half_length] = '\0';
-                    line->str = s;
-                    line->off = first_half_offset;
-                    line->len = first_half_length + second_half_length;
-                    iter->prev_line_maybe = s;
-                }
-            }
+        if (c < goff) {
+            line->str = s + first_start;
+            line->off = first_start;
+            line->len = first_len;
+            c++; // Consume the \n
+            if (c == goff) 
+                c += glen;
 
         } else {
 
-            if (line != NULL) {
+            assert(c == goff);
+            
+            c += glen; // Skip the gap
 
-                size_t line_offset = first_half_offset;
-                size_t line_length = first_half_length;
+            size_t second_start = c;
+            while (c < n && s[c] != '\n') 
+                c++;
+            size_t second_len = c - second_start;
+            
+            if (c < n) 
+                c++; // Consume the \n
 
-                line->str = iter->buf->data + line_offset;
-                line->off = line_offset;
-                line->len = line_length;
-
-                // Overwrite \n with \0
-                iter->overw_by_zero = iter->buf->data[iter->cur];
-                iter->placed_zero = true;
-                iter->zero_offset = iter->cur;
-                iter->buf->data[iter->cur] = '\0';
-            }
-
-            iter->cur++; // Consume the \n
+            char  *dst = iter->temp;
+            size_t max = sizeof(iter->temp);
+            
+            size_t  first_copy_len = MIN( first_len, max);
+            size_t second_copy_len = MIN(second_len, max - first_copy_len);
+            memcpy(dst,                  s +  first_start,  first_copy_len);
+            memcpy(dst + first_copy_len, s + second_start, second_copy_len);
+            line->str = iter->temp;
+            line->off = first_start;
+            line->len = first_copy_len + second_copy_len;
         }
     }
-
+    
+    iter->cur = c;
     return true;
 }
 
-bool GapBufferIter_getLine(GapBufferIter *iter, size_t idx, Slice *line)
+bool GapBufferIter_getLine(GapBufferIter *iter, size_t idx, Line *line)
 {
-    for (size_t i = 0; i < idx; i++)
-        if (!GapBufferIter_nextLine(iter, NULL))
+    for (size_t i = 0; i < idx+1; i++)
+        if (!GapBufferIter_nextLine(iter, line))
             return false;
-    if (!GapBufferIter_nextLine(iter, line))
-        return false;
     return true;
 }

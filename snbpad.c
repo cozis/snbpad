@@ -29,10 +29,10 @@ void evaluateRightBufferRegion(Rectangle *region,
     };
 }
 
-void snbpad()
+void snbpad(void)
 {
-    int w = 300;
-    int h = 400;
+    int w = 800;
+    int h = 700;
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(w, h, "SnBpad");
@@ -63,7 +63,7 @@ void snbpad()
         .text = {
             .nobg = false,
             .font = &font,
-            .bgcolor = {0xff, 0xff, 0xff, 0xff},
+            .bgcolor = {48, 56, 65, 255},
             .fgcolor = {0x33, 0x33, 0x33, 0xff},
             .selection_bgcolor = {0xcc, 0xcc, 0xff, 0xff},
         },
@@ -126,7 +126,7 @@ void snbpad()
             evaluateLeftBufferRegion(&elements[0]->region, w, h);
             evaluateRightBufferRegion(&elements[1]->region, w, h);
         }
-
+        
         GUIElement *hovered = NULL;
 
         Vector2 cursor_point = {GetMouseX(), GetMouseY()};
@@ -334,14 +334,8 @@ void snbpad()
     CloseWindow();
 }
 
-int main(int argc, char **argv)
+int main(void)
 {
-    const char *file;
-    if (argc > 1)
-        file = argv[1];
-    else
-        file = NULL;
-
-    snbpad(file, -1, -1);
+    snbpad();
     return 0;
 }
