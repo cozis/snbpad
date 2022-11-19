@@ -86,7 +86,6 @@ bool GapBufferIter_nextLine(GapBufferIter *iter,
             line->len = first_copy_len + second_copy_len;
         }
     }
-    
     iter->cur = c;
     return true;
 }

@@ -22,6 +22,7 @@ typedef struct {
         Color fgcolor;
         Color bgcolor;
         Font *font;
+        int font_size;
         bool    auto_width;
         unsigned int width;
         unsigned char padding_up;
@@ -36,9 +37,12 @@ typedef struct {
         Color fgcolor;
         Color bgcolor;
         Font *font;
+        int font_size;
+        TextAlignV v_align;
         Color selection_bgcolor;
     } text;
     struct {
+        unsigned int blink_period;
         Color bgcolor;
     } cursor;
     struct {

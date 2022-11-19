@@ -12,10 +12,10 @@ void GUIElement_free(GUIElement *elem)
         elem->methods->free(elem);
 }
 
-void GUIElement_tick(GUIElement *elem)
+void GUIElement_tick(GUIElement *elem, uint64_t time)
 {
     if (elem->methods->tick != NULL)
-        elem->methods->tick(elem);
+        elem->methods->tick(elem, time);
 }
 
 void GUIElement_draw(GUIElement *elem)
@@ -136,4 +136,16 @@ void GUIElement_onOpen(GUIElement *elem)
 {
     if (elem->methods->onOpen != NULL)
         elem->methods->onOpen(elem);
+}
+
+void GUIElement_onFocusLost(GUIElement *elem)
+{
+    if (elem->methods->onFocusLost != NULL)
+        elem->methods->onFocusLost(elem);
+}
+
+void GUIElement_onFocusGained(GUIElement *elem)
+{
+    if (elem->methods->onFocusGained != NULL)
+        elem->methods->onFocusGained(elem);
 }

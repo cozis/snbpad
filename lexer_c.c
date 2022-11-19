@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <string.h>
 #include <assert.h>
+#include "xutf8.h"
 #include "lexer_c.h"
 
 static bool isoperat(char c)
@@ -318,11 +319,14 @@ static bool next(Lexer *lex, Token *tok)
             case '}': clex->curly_bracket_depth -= 1; break;
         }
 
+        int num = xutf8_sequence_to_utf32_codepoint(str + i, len - i, NULL);
+        if (num < 1) num = 1;
+
         tok->fgcolor = style->fgcolor_other;
         tok->bgcolor = style->bgcolor_other;
         tok->offset = i;
-        tok->length = 1;
-        i += 1;
+        tok->length = num;
+        i += num;
     }
 
     if(kind == TK_NEWL)

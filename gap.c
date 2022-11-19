@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <raylib.h>
 #include "gap.h"
 #include "utils.h"
 #include "xutf8.h"
@@ -17,8 +18,9 @@ static size_t countLines(const char *str, size_t len)
 static size_t countLinesInBuffer(GapBuffer *buf)
 {
     size_t p = (buf->gap_offset + buf->gap_length);
-    return countLines(buf->data, buf->gap_offset)
-         + countLines(buf->data + p, buf->size - p);
+    size_t lineno = countLines(buf->data,     buf->gap_offset)
+                  + countLines(buf->data + p, buf->size - p);
+    return lineno+1; // +1?
 }
 
 static void moveBytesAfterGap(GapBuffer *buffer, size_t num)
@@ -92,7 +94,8 @@ bool GapBuffer_moveCursorForward(GapBuffer *buf)
     if (buf->gap_offset + buf->gap_length == buf->size)
         return false;
     
-    int n = xutf8_curr(buf->data, buf->size, buf->gap_offset + buf->gap_length, NULL);
+    int after_gap = buf->gap_offset + buf->gap_length;
+    int n = xutf8_sequence_to_utf32_codepoint(buf->data + after_gap, buf->size - after_gap, NULL);
     assert(n >= 0);
 
     if (buf->gap_offset + buf->gap_length + n == buf->size)
@@ -133,9 +136,7 @@ static bool growGap(GapBuffer *buf, size_t min)
 {
     if (buf->data == NULL) {
         
-        size_t size = 4096;
-        if (size < min) size = min;
-
+        const size_t size = MAX(4096, min);
         char *data = malloc(size);
         if (data == NULL)
             return false;
@@ -146,7 +147,7 @@ static bool growGap(GapBuffer *buf, size_t min)
         buf->gap_length = size;
 
     } else {
-        size_t new_size = 2 * buf->size;
+        const size_t new_size = MAX(2 * buf->size, buf->size + min);
         char  *new_data = malloc(new_size);
         if (new_data == NULL)
             return false;
@@ -197,6 +198,9 @@ bool GapBuffer_initFile(GapBuffer *buf, const char *file)
             fclose(stream);
             return false;
         }
+
+        // TODO: Swap \t with spaces while loading
+        //       the file.
 
         buf->gap_length -= size;
         buf->lineno = countLinesInBuffer(buf);

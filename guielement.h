@@ -7,7 +7,7 @@ typedef struct GUIElement GUIElement;
 typedef struct {
     bool allows_focus;
     void (*free)(GUIElement*);
-    void (*tick)(GUIElement*);
+    void (*tick)(GUIElement*, uint64_t);
     void (*draw)(GUIElement*);
     void (*clickUp)(GUIElement*, int, int);
     void (*onClickDown)(GUIElement*, int, int);
@@ -25,6 +25,8 @@ typedef struct {
     void (*onCut)(GUIElement*);
     void (*onSave)(GUIElement*);
     void (*onOpen)(GUIElement*);
+    void (*onFocusLost)(GUIElement*);
+    void (*onFocusGained)(GUIElement*);
 } GUIElementMethods;
 
 struct GUIElement {
@@ -34,7 +36,7 @@ struct GUIElement {
 };
 
 void GUIElement_free(GUIElement *elem);
-void GUIElement_tick(GUIElement *elem);
+void GUIElement_tick(GUIElement *elem, uint64_t time);
 void GUIElement_draw(GUIElement *elem);
 void GUIElement_clickUp(GUIElement *elem, int x, int y);
 void GUIElement_onClickDown(GUIElement *elem, int x, int y);
@@ -53,4 +55,6 @@ void GUIElement_onCopy(GUIElement *elem);
 void GUIElement_onCut(GUIElement *elem);
 void GUIElement_onSave(GUIElement *elem);
 void GUIElement_onOpen(GUIElement *elem);
+void GUIElement_onFocusLost(GUIElement *elem);
+void GUIElement_onFocusGained(GUIElement *elem);
 bool GUIElement_allowsFocus(GUIElement *elem);

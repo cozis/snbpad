@@ -7,8 +7,14 @@
 #include "utils.h"
 #include "textdisplay.h"
 
-void evaluateLeftBufferRegion(Rectangle *region, 
-                              int win_w, int win_h)
+GUIElement *focused = NULL;
+GUIElement *last_focused = NULL;
+GUIElement *elements[2]; 
+size_t element_count = 0;
+
+static void 
+evaluateLeftBufferRegion(Rectangle *region, 
+                         int win_w, int win_h)
 {
     *region = (Rectangle) {
         .x = 10, 
@@ -18,8 +24,9 @@ void evaluateLeftBufferRegion(Rectangle *region,
     };
 }
 
-void evaluateRightBufferRegion(Rectangle *region, 
-                               int win_w, int win_h)
+static void 
+evaluateRightBufferRegion(Rectangle *region, 
+                          int win_w, int win_h)
 {
     *region = (Rectangle) {
         .x = (win_w - 30) / 2 + 20, 
@@ -27,6 +34,63 @@ void evaluateRightBufferRegion(Rectangle *region,
         .width  = (win_w - 30) / 2,
         .height = win_h - 40,
     };
+}
+
+static void updateElementRegions()
+{
+    int w = GetScreenWidth();
+    int h = GetScreenHeight();
+    if (element_count == 1) {
+        Rectangle region;
+        region.x = 10;
+        region.y = 20;
+        region.width  = w - 20;
+        region.height = h - 40;
+        elements[0]->region = region;
+    } else {
+        assert(element_count == 2);
+        evaluateLeftBufferRegion(&elements[0]->region, w, h);
+        evaluateRightBufferRegion(&elements[1]->region, w, h);
+    }
+}
+
+static void switchToSingleBufferMode(bool remove_right_buffer)
+{
+    assert(element_count == 2);
+    GUIElement *removed;
+    if (remove_right_buffer)
+        removed = elements[1];
+    else {
+        removed = elements[0];
+        elements[0] = elements[1];
+    }
+    element_count = 1;
+    GUIElement_free(removed);
+    if (focused == removed)
+        focused = NULL;
+    if (last_focused == removed)
+        last_focused = NULL;
+    updateElementRegions();
+}
+
+static void switchToDoubleBufferMode(const TextDisplayStyle *style, 
+                                     bool new_buffer_to_the_right)
+{
+    assert(element_count == 1);
+    
+    Rectangle region = {0, 0, 0, 0}; // Anything goes.
+    GUIElement *elem = TextDisplay_new(region, "First-buffer", NULL, style);
+    if (elem != NULL) {
+
+        if (new_buffer_to_the_right)
+            elements[1] = elem;
+        else {
+            elements[1] = elements[0];
+            elements[0] = elem;
+        }
+        element_count = 2;
+        updateElementRegions();
+    }
 }
 
 void snbpad(void)
@@ -51,23 +115,27 @@ void snbpad(void)
             .fgcolor = {0xcc, 0xcc, 0xcc, 0xff},
             .bgcolor = {0x33, 0x33, 0x33, 0xff},
             .font = &font,
+            .font_size = 30,
             .auto_width = false,
             .width = 60,
             .h_align = TextAlignH_RIGHT,
             .v_align = TextAlignV_CENTER,
-            .padding_up = 0,
-            .padding_down = 0,
+            .padding_up = 3,
+            .padding_down = 3,
             .padding_left = 10,
             .padding_right = 10,
         },
         .text = {
             .nobg = false,
             .font = &font,
+            .font_size = 30,
+            .v_align = TextAlignV_CENTER,
             .bgcolor = {48, 56, 65, 255},
-            .fgcolor = {0x33, 0x33, 0x33, 0xff},
+            .fgcolor = {0xee, 0xee, 0xee, 0xff},
             .selection_bgcolor = {0xcc, 0xcc, 0xff, 0xff},
         },
         .cursor = {
+            .blink_period = 500, 
             .bgcolor = {0xbb, 0xbb, 0xbb, 0xff},
         },
         .scroll = {
@@ -75,29 +143,17 @@ void snbpad(void)
         },
         .scrollbar_size = 20,
         .auto_line_height = true,
+        .line_height = 20,
     };
 
-    GUIElement *elements[32]; 
-    size_t element_count = 0;
-
     {
-        Rectangle region;
-        evaluateLeftBufferRegion(&region, w, h);
-        GUIElement *tdisplay = TextDisplay_new(region, "Left-buffer", NULL, &style);
+        Rectangle region = {0, 0, 0, 0}; // Anything goes.
+        GUIElement *tdisplay = TextDisplay_new(region, "First-buffer", NULL, &style);
         if (tdisplay == NULL)
             return;
         
         elements[element_count++] = tdisplay;
-    }
-
-    {
-        Rectangle region;
-        evaluateRightBufferRegion(&region, w, h);
-        GUIElement *tdisplay = TextDisplay_new(region, "Right-Buffer", NULL, &style);
-        if (tdisplay == NULL)
-            return;
-        
-        elements[element_count++] = tdisplay;
+        updateElementRegions();
     }
 
     int arrow_press_interval = 70;
@@ -112,20 +168,24 @@ void snbpad(void)
     int left_arrow_counter = 0;
     int right_arrow_counter = 0;
     SetTargetFPS(fps);
+    uint64_t time_in_ms = 0;
 
-    GUIElement *focused = NULL;
-    GUIElement *last_focused = NULL;
+    typedef enum {
+        NO_CHANGE,
+        CHANGE_LEFT,
+        CHANGE_RIGHT,
+    } PendingModeChange; 
+    
     while (!WindowShouldClose()) {
 
-        for (size_t i = 0; i < element_count; i++)
-            GUIElement_tick(elements[i]);
+        PendingModeChange pending = NO_CHANGE;
 
-        if (IsWindowResized()) {
-            w = GetScreenWidth();
-            h = GetScreenHeight();
-            evaluateLeftBufferRegion(&elements[0]->region, w, h);
-            evaluateRightBufferRegion(&elements[1]->region, w, h);
-        }
+        for (size_t i = 0; i < element_count; i++)
+            GUIElement_tick(elements[i], time_in_ms);
+        time_in_ms += ms_per_frame;
+
+        if (IsWindowResized())
+            updateElementRegions();
         
         GUIElement *hovered = NULL;
 
@@ -158,19 +218,24 @@ void snbpad(void)
                             TraceLog(LOG_INFO, "Element [%s] gained focus", 
                                      hovered->name);
                         } else {
+                            GUIElement_onFocusLost(focused);
                             TraceLog(LOG_INFO, "Focus changed from element [%s] to [%s]", 
                                      focused->name, hovered->name);
                         }
+                        GUIElement_onFocusGained(hovered);
                         last_focused = hovered;
                         focused = hovered;
                     } else {
+                        GUIElement_onFocusLost(focused);
                         TraceLog(LOG_INFO, "Element [%s] lost focus", 
                                  focused->name);
+                        SetWindowTitle("SnBpad"); 
                         focused = NULL;
                     }
                 }
             } else {
                 if (focused != NULL) {
+                    GUIElement_onFocusLost(focused);
                     TraceLog(LOG_INFO, "Element [%s] lost focus", 
                              focused->name);
                     focused = NULL;
@@ -218,6 +283,12 @@ void snbpad(void)
                 
                 if (IsKeyPressed(KEY_V))
                     GUIElement_onPaste(focused);
+
+                if (IsKeyPressed(KEY_LEFT))
+                    pending = CHANGE_LEFT;
+
+                if (IsKeyPressed(KEY_RIGHT))
+                    pending = CHANGE_RIGHT;
             }
         
         } else {
@@ -327,6 +398,19 @@ void snbpad(void)
             UnloadRenderTexture(targets[i]);
 
         SetTraceLogLevel(LOG_DEBUG);
+    
+        if (pending == CHANGE_LEFT) {
+            if (element_count == 1)
+                switchToDoubleBufferMode(&style, false);
+            else
+                switchToSingleBufferMode(false);
+        } else if (pending == CHANGE_RIGHT) {
+            if (element_count == 1)
+                switchToDoubleBufferMode(&style, true);
+            else
+                switchToSingleBufferMode(true);
+        }
+        pending = NO_CHANGE;
     }
     for (size_t i = 0; i < element_count; i++)
         GUIElement_free(elements[i]);

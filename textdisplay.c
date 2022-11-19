@@ -1,3 +1,4 @@
+#include <math.h>
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
@@ -23,18 +24,35 @@ typedef struct {
         int start_amount;
         int start_cursor;
     } v_scroll;
+    struct {
+        double intensity;
+    } cursor;
+    bool      focused;
     bool      selecting;
     Selection selection;
     GapBuffer buffer;
     char file[1024];
 } TextDisplay;
 
-static size_t 
-calculateStringRenderWidth(Font font, 
-                           const char *str, 
-                           size_t len)
+static void updateWindowTitle(TextDisplay *tdisp)
 {
-    size_t w = 0;
+    char buffer[256];
+    if (tdisp->file[0] == '\0')
+        strncpy(buffer, "SnBpad - (unnamed)", sizeof(buffer));
+    else
+        snprintf(buffer, sizeof(buffer), "SnBpad - %s", tdisp->file);
+    SetWindowTitle(buffer);
+}
+
+static float 
+calculateStringRenderWidth(Font font, int font_size,
+                           const char *str, size_t len)
+{
+    if (font.texture.id == 0) 
+        font = GetFontDefault();
+
+    float scale = (float) font_size / font.baseSize;
+    float  w = 0;
     size_t i = 0;
     while (i < len) {
 
@@ -49,14 +67,13 @@ calculateStringRenderWidth(Font font,
         else
             i += consumed;
 
-        int delta;
-
+        float delta;
         int advanceX = font.glyphs[glyph_index].advanceX;
         if (advanceX)
-            delta = advanceX;
+            delta = (float) advanceX * scale;
         else
-            delta = font.recs[glyph_index].width 
-                  + font.glyphs[glyph_index].offsetX;
+            delta = (float) font.recs[glyph_index].width * scale
+                  + (float) font.glyphs[glyph_index].offsetX * scale;
 
         w += delta;
     }
@@ -64,35 +81,39 @@ calculateStringRenderWidth(Font font,
 }
 
 static size_t 
-longestSubstringThatRendersInLessPixelsThan(Font font, 
-                                            const char *str, 
-                                            size_t len, 
-                                            size_t max_px_len)
+longestSubstringThatRendersInLessPixelsThan(Font font, int font_size,
+                                            const char *str, size_t len, 
+                                            float max_px_len)
 {
     if (str == NULL)
         str = "";
 
-    size_t w = 0;
+    if (font.texture.id == 0) 
+        font = GetFontDefault();
+
+    float scale = (float) font_size / font.baseSize;
+
+    float  w = 0;
     size_t i = 0;
     while (i < len) {
 
-        int consumed;
-        int letter = GetCodepoint(str + i, &consumed);
-        int glyph_index = GetGlyphIndex(font, letter);
+        uint32_t codepoint;
+        int consumed = xutf8_sequence_to_utf32_codepoint(str + i, len - i, &codepoint);
 
-        if (letter == 0x3f)
-            i++;
-        else
-            i += consumed;
+        if (consumed < 0) {
+            codepoint = '?';
+            consumed = 1;
+        }
+        i += consumed;
+        int glyph_index = GetGlyphIndex(font, codepoint);
 
-        int delta;
-
+        float delta;
         int advanceX = font.glyphs[glyph_index].advanceX;
         if (advanceX)
-            delta = advanceX;
+            delta = (float) advanceX * scale;
         else
-            delta = font.recs[glyph_index].width 
-                  + font.glyphs[glyph_index].offsetX;
+            delta = (float) font.recs[glyph_index].width * scale
+                  + (float) font.glyphs[glyph_index].offsetX * scale;
         
         assert(delta >= 0);
         if (w + delta > max_px_len)
@@ -100,53 +121,56 @@ longestSubstringThatRendersInLessPixelsThan(Font font,
 
         w += delta;
     }
+    assert(i <= len);
     return i;
 }
 
-static size_t renderString(Font font, const char *str, size_t len,
-                           int off_x, int off_y, float font_size, 
-                           Color tint)
+static float renderString(Font font, const char *str, size_t len,
+                          int off_x, int off_y, float font_size, 
+                          Color tint)
 {
     if (font.texture.id == 0) 
         font = GetFontDefault();
 
-    int   y = off_y; // Offset between lines (on line break '\n')
+    int   y = off_y;
     float x = off_x; // Offset X to next character to draw
 
     float spacing = 0;
-    float scale = font_size / font.baseSize; // Character quad scaling factor
+    float scale = (float) font_size / font.baseSize; // Character quad scaling factor
 
     size_t i = 0;
     while (i < len) {
 
-        // Get next codepoint from byte string and glyph index in font
-        int consumed = 0;
-        int codepoint = GetCodepoint(str + i, &consumed);
-        int index = GetGlyphIndex(font, codepoint);
+        uint32_t codepoint;
+        int consumed = xutf8_sequence_to_utf32_codepoint(str + i, len - i, &codepoint);
 
-        // NOTE: Normally we exit the decoding sequence as soon as a bad byte is found (and return 0x3f)
-        // but we need to draw all of the bad bytes using the '?' symbol moving one byte
-        if (codepoint == 0x3f) 
+        if (consumed < 1) {
+            codepoint = '?';
             consumed = 1;
+        }
+
+        assert(consumed > 0);
+        int glyph_index = GetGlyphIndex(font, codepoint);
 
         assert(codepoint != '\n');
 
-        if (codepoint != ' ' && codepoint != '\t')
-            DrawTextCodepoint(font, codepoint, 
-                              (Vector2){ x, y }, 
+        if (codepoint != ' ' && codepoint != '\t') {
+            Vector2 position = {x, y};
+            DrawTextCodepoint(font, codepoint, position, 
                               font_size, tint);
+        }
 
         float delta;
-        int advance_x = font.glyphs[index].advanceX;
+        int advance_x = font.glyphs[glyph_index].advanceX;
         if (advance_x == 0) 
-            delta = (float) font.recs[index].width * scale + spacing;
+            delta = (float) font.recs[glyph_index].width * scale + spacing;
         else 
             delta = (float) advance_x * scale + spacing;
 
         x += delta;
-        i += consumed;   // Move text bytes counter to next codepoint
+        i += consumed;
     }
-    int w = x - off_x;
+    float w = x - (float) off_x;
     return w;
 }
 
@@ -168,8 +192,8 @@ static unsigned int
 TextDisplay_getLineHeight(TextDisplay *tdisp)
 {
     if (tdisp->style->auto_line_height) {
-        unsigned int h1 = tdisp->style->text.font->baseSize;
-        unsigned int h2 = tdisp->style->lineno.font->baseSize 
+        unsigned int h1 = tdisp->style->text.font_size;
+        unsigned int h2 = tdisp->style->lineno.font_size 
                         + tdisp->style->lineno.padding_up 
                         + tdisp->style->lineno.padding_down;
         return MAX(h1, h2);
@@ -177,10 +201,10 @@ TextDisplay_getLineHeight(TextDisplay *tdisp)
     return tdisp->style->line_height;
 }
 
-static unsigned int 
+static float
 TextDisplay_getLinenoColumnWidth(TextDisplay *tdisp)
 {
-    int width;
+    float width;
     if (tdisp->style->lineno.hide)
         width = 0;
     else if (tdisp->style->lineno.auto_width) {
@@ -189,7 +213,7 @@ TextDisplay_getLinenoColumnWidth(TextDisplay *tdisp)
         char s[8];
         int n = snprintf(s, sizeof(s), "%ld", max_lineno);
         assert(n >= 0 && n < (int) sizeof(s));
-        width = calculateStringRenderWidth(font, s, n);
+        width = calculateStringRenderWidth(font, tdisp->style->lineno.font_size, s, n);
     } else
         width = tdisp->style->lineno.width;
     return width
@@ -199,7 +223,7 @@ TextDisplay_getLinenoColumnWidth(TextDisplay *tdisp)
 
 static size_t 
 cursorFromClick(TextDisplay *tdisp,
-                int x, int y)
+                float x, float y)
 {
     GapBufferIter iter;
     GapBufferIter_init(&iter, &tdisp->buffer);
@@ -211,14 +235,14 @@ cursorFromClick(TextDisplay *tdisp,
         return GapBuffer_getUsage(&tdisp->buffer);
     }
 
-    unsigned int lineno_colm_w = TextDisplay_getLinenoColumnWidth(tdisp);
+    float lineno_colm_w = TextDisplay_getLinenoColumnWidth(tdisp);
 
     Font font = *tdisp->style->text.font;
     size_t cursor;
-    if (x < (int) lineno_colm_w)
+    if (x < lineno_colm_w)
         cursor = line.off;
     else
-        cursor = line.off + longestSubstringThatRendersInLessPixelsThan(font, line.str, line.len, x - lineno_colm_w);
+        cursor = line.off + longestSubstringThatRendersInLessPixelsThan(font, tdisp->style->text.font_size, line.str, line.len, x - lineno_colm_w);
 
     GapBufferIter_free(&iter);
     return cursor;
@@ -260,9 +284,12 @@ static void increaseVerticalScroll(TextDisplay *tdisp, int scroll_incr)
     setVerticalScroll(tdisp, tdisp->v_scroll.amount + scroll_incr);
 }
 
-static void tickCallback(GUIElement *elem)
+static void tickCallback(GUIElement *elem, uint64_t time_in_ms)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
+    
+    double angular_velocity = 2 * M_PI / tdisp->style->cursor.blink_period;
+    tdisp->cursor.intensity = sin(time_in_ms * angular_velocity);
 
     if (tdisp->v_scroll.force != 0) {
         increaseVerticalScroll(tdisp, tdisp->v_scroll.force);
@@ -453,6 +480,19 @@ static void onTextInputCallback(GUIElement *elem,
     GapBuffer_insertString(&tdisp->buffer, str, len);
 }
 
+static void onFocusLost(GUIElement *elem)
+{
+    TextDisplay *tdisp = (TextDisplay*) elem;
+    tdisp->focused = false;
+}
+
+static void onFocusGained(GUIElement *elem)
+{
+    TextDisplay *tdisp = (TextDisplay*) elem;
+    tdisp->focused = true;
+    updateWindowTitle(tdisp);
+}
+
 static void cutOrCopy(TextDisplay *tdisp, bool cut)
 {
     if (tdisp->selection.active) {
@@ -518,6 +558,7 @@ static void onOpenCallback(GUIElement *elem)
         tdisp->buffer = temp;
 
         strncpy(tdisp->file, file, sizeof(tdisp->file));
+        updateWindowTitle(tdisp);
     }
 }
 
@@ -539,6 +580,7 @@ static void onSaveCallback(GUIElement *elem)
             return;
         }
         strncpy(tdisp->file, file, sizeof(tdisp->file));
+        updateWindowTitle(tdisp);
     }        
 
     FILE *stream = fopen(tdisp->file, "wb");
@@ -555,7 +597,7 @@ typedef struct {
     TextDisplay *tdisp;
     GapBufferIter iter;
     unsigned int line_height;
-    int line_num_w;
+    float line_num_w;
     int line_x;
     int line_y;
     Line line;
@@ -615,8 +657,8 @@ static void drawLineno(int no, int x, int y, int w, int h,
 
         Font font = *style->lineno.font;
 
-        int text_h = font.baseSize;
-        int text_w = calculateStringRenderWidth(font, s, n);
+        int text_h = style->lineno.font_size;
+        int text_w = calculateStringRenderWidth(font, style->lineno.font_size, s, n);
         int text_x;
         int text_y;
         switch (style->lineno.h_align) {
@@ -630,7 +672,7 @@ static void drawLineno(int no, int x, int y, int w, int h,
             case TextAlignV_BOTTOM: text_y = y + (h - text_h) / 2 - style->lineno.padding_down; break;
         }
         renderString(font, s, n, text_x, text_y, 
-                     font.baseSize, 
+                     style->lineno.font_size, 
                      style->lineno.fgcolor);
     }
 }
@@ -652,8 +694,8 @@ static void drawSelection(DrawContext draw_context)
             size_t rel_tail = MIN(sel_rel_off + sel_len, line.len);
             
             Font font = *tdisp->style->text.font;
-            int sel_w = calculateStringRenderWidth(font, line.str + rel_head, rel_tail - rel_head);
-            int sel_x = calculateStringRenderWidth(font, line.str, rel_head)
+            int sel_w = calculateStringRenderWidth(font, tdisp->style->text.font_size, line.str + rel_head, rel_tail - rel_head);
+            int sel_x = calculateStringRenderWidth(font, tdisp->style->text.font_size, line.str, rel_head)
                       + draw_context.line_x + draw_context.line_num_w;
 
             DrawRectangle(
@@ -664,25 +706,17 @@ static void drawSelection(DrawContext draw_context)
     }
 }
 
-static void drawLineText(DrawContext draw_context, bool plain)
+static void drawLineText(DrawContext draw_context)
 {
     TextDisplay *tdisp = draw_context.tdisp;
     Font font = *tdisp->style->text.font;
+    int  font_size = tdisp->style->text.font_size;
     const char  *s = draw_context.line.str;
     const size_t n = draw_context.line.len;
     int x = draw_context.line_x + draw_context.line_num_w;
-    int y = draw_context.line_y;
-    if (plain)
-        renderString(font, s, n, x, y, font.baseSize, 
-                     tdisp->style->text.fgcolor);
-    else {
-        Token token;
-        CLexer clex = CLexer_init(NULL, s, n);
-        Lexer *lex = (Lexer*) &clex;
-        while (Lexer_next(lex, &token))
-            x += renderString(font, s + token.offset, token.length, x, y, font.baseSize, token.fgcolor);
-        Lexer_free(lex);
-    }
+    int y = draw_context.line_y + (draw_context.line_height - font_size) / 2;
+    renderString(font, s, n, x, y, font_size, 
+                 tdisp->style->text.fgcolor);
 }
 
 static bool drawCursor(DrawContext draw_context)
@@ -694,14 +728,18 @@ static bool drawCursor(DrawContext draw_context)
 
     if (line.off <= cursor && cursor <= line.off + line.len) {
         /* The cursor is in this line */
-        int relative_cursor_x = calculateStringRenderWidth(font, line.str, cursor - line.off);
-        DrawRectangle(
-            draw_context.line_x + draw_context.line_num_w + relative_cursor_x,
-            draw_context.line_y,
-            3,
-            draw_context.line_height,
-            tdisp->style->cursor.bgcolor
-        );
+        if (tdisp->focused) {
+            int relative_cursor_x = calculateStringRenderWidth(font, tdisp->style->text.font_size, line.str, cursor - line.off);
+            Color color = tdisp->style->cursor.bgcolor;
+            color.a = 255 * (tdisp->cursor.intensity + 1) / 2;
+            DrawRectangle(
+                draw_context.line_x + draw_context.line_num_w + relative_cursor_x,
+                draw_context.line_y,
+                3,
+                draw_context.line_height,
+                color
+            );
+        }
         return true;
     }
     return false;
@@ -734,7 +772,7 @@ static void drawCallback(GUIElement *elem)
                    draw_context.line_height,
                    tdisp->style);
         drawSelection(draw_context);
-        drawLineText(draw_context, false);
+        drawLineText(draw_context);
         if (drawCursor(draw_context))
             drew_cursor = true;
     }
@@ -745,12 +783,16 @@ static void drawCallback(GUIElement *elem)
                    draw_context.line_num_w, 
                    draw_context.line_height,
                    tdisp->style);
-        DrawRectangle(
-            draw_context.line_x + draw_context.line_num_w,
-            draw_context.line_y,
-            3,
-            draw_context.line_height,
-            tdisp->style->cursor.bgcolor);
+        if (tdisp->focused) {
+            Color color = tdisp->style->cursor.bgcolor;
+            color.a = 255 * tdisp->cursor.intensity;
+            DrawRectangle(
+                draw_context.line_x + draw_context.line_num_w,
+                draw_context.line_y,
+                3,
+                draw_context.line_height,
+                color);
+        }
     }
     drawVerticalScrollbar(draw_context);
     freeDrawContext(&draw_context);
@@ -769,6 +811,8 @@ static const GUIElementMethods methods = {
     .tick = tickCallback,
     .draw = drawCallback,
     .clickUp = clickUpCallback,
+    .onFocusLost = onFocusLost,
+    .onFocusGained = onFocusGained,
     .onClickDown = onClickDownCallback,
     .offClickDown = offClickDownCallback,
     .onMouseWheel = onMouseWheelCallback,
@@ -803,6 +847,8 @@ GUIElement *TextDisplay_new(Rectangle region,
         tdisp->v_scroll.amount = 0;
         tdisp->v_scroll.start_amount = 0;
         tdisp->v_scroll.start_cursor = 0;
+        tdisp->cursor.intensity = 0;
+        tdisp->focused = false;
         tdisp->selecting = false;
         tdisp->selection.active = false;
         
