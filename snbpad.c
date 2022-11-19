@@ -106,7 +106,6 @@ void snbpad(void)
     }
 
     const char *font_file = "/usr/share/fonts/TTF/Inconsolata-Medium.ttf";
-    Font font = LoadFont(font_file);
 
     TextDisplayStyle style = {
         .lineno = {
@@ -114,7 +113,7 @@ void snbpad(void)
             .nobg = false,
             .fgcolor = {0xcc, 0xcc, 0xcc, 0xff},
             .bgcolor = {0x33, 0x33, 0x33, 0xff},
-            .font = &font,
+            .font_file = font_file,
             .font_size = 30,
             .auto_width = false,
             .width = 60,
@@ -127,7 +126,7 @@ void snbpad(void)
         },
         .text = {
             .nobg = false,
-            .font = &font,
+            .font_file = font_file,
             .font_size = 30,
             .v_align = TextAlignV_CENTER,
             .bgcolor = {48, 56, 65, 255},
@@ -414,7 +413,6 @@ void snbpad(void)
     }
     for (size_t i = 0; i < element_count; i++)
         GUIElement_free(elements[i]);
-    UnloadFont(font);
     CloseWindow();
 }
 

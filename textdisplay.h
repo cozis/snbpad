@@ -21,8 +21,8 @@ typedef struct {
         bool nobg;
         Color fgcolor;
         Color bgcolor;
-        Font *font;
-        int font_size;
+        const char *font_file;
+        int         font_size;
         bool    auto_width;
         unsigned int width;
         unsigned char padding_up;
@@ -36,8 +36,8 @@ typedef struct {
         bool nobg;
         Color fgcolor;
         Color bgcolor;
-        Font *font;
-        int font_size;
+        const char *font_file;
+        int         font_size;
         TextAlignV v_align;
         Color selection_bgcolor;
     } text;

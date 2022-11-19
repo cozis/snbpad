@@ -5,7 +5,6 @@
 #include "sfd.h"
 #include "utils.h"
 #include "xutf8.h"
-#include "lexer_c.h"
 #include "gapiter.h"
 #include "textdisplay.h"
 
@@ -17,6 +16,12 @@ typedef struct {
 typedef struct {
     GUIElement base;
     const TextDisplayStyle *style;
+    struct {
+        Font font;
+    } text;
+    struct {
+        Font font;
+    } lineno;
     struct {
         int  force;
         int  amount;
@@ -208,7 +213,7 @@ TextDisplay_getLinenoColumnWidth(TextDisplay *tdisp)
     if (tdisp->style->lineno.hide)
         width = 0;
     else if (tdisp->style->lineno.auto_width) {
-        Font font = *tdisp->style->lineno.font;
+        Font font = tdisp->lineno.font;
         size_t max_lineno = GapBuffer_getLineno(&tdisp->buffer);
         char s[8];
         int n = snprintf(s, sizeof(s), "%ld", max_lineno);
@@ -237,7 +242,7 @@ cursorFromClick(TextDisplay *tdisp,
 
     float lineno_colm_w = TextDisplay_getLinenoColumnWidth(tdisp);
 
-    Font font = *tdisp->style->text.font;
+    Font font = tdisp->text.font;
     size_t cursor;
     if (x < lineno_colm_w)
         cursor = line.off;
@@ -643,7 +648,8 @@ static bool nextLine(DrawContext *draw_context)
     return !done;
 }
 
-static void drawLineno(int no, int x, int y, int w, int h,
+static void drawLineno(int no, int x, int y, 
+                       int w, int h, Font font,
                        const TextDisplayStyle *style)
 {
     if (style->lineno.hide == false) {
@@ -654,8 +660,6 @@ static void drawLineno(int no, int x, int y, int w, int h,
         char s[8];
         int n = snprintf(s, sizeof(s), "%d", no);
         assert(n >= 0 && n < (int) sizeof(s));
-
-        Font font = *style->lineno.font;
 
         int text_h = style->lineno.font_size;
         int text_w = calculateStringRenderWidth(font, style->lineno.font_size, s, n);
@@ -693,7 +697,7 @@ static void drawSelection(DrawContext draw_context)
             size_t rel_head = MAX(sel_rel_off, 0);
             size_t rel_tail = MIN(sel_rel_off + sel_len, line.len);
             
-            Font font = *tdisp->style->text.font;
+            Font font = tdisp->text.font;
             int sel_w = calculateStringRenderWidth(font, tdisp->style->text.font_size, line.str + rel_head, rel_tail - rel_head);
             int sel_x = calculateStringRenderWidth(font, tdisp->style->text.font_size, line.str, rel_head)
                       + draw_context.line_x + draw_context.line_num_w;
@@ -709,7 +713,7 @@ static void drawSelection(DrawContext draw_context)
 static void drawLineText(DrawContext draw_context)
 {
     TextDisplay *tdisp = draw_context.tdisp;
-    Font font = *tdisp->style->text.font;
+    Font font = tdisp->text.font;
     int  font_size = tdisp->style->text.font_size;
     const char  *s = draw_context.line.str;
     const size_t n = draw_context.line.len;
@@ -724,7 +728,7 @@ static bool drawCursor(DrawContext draw_context)
     TextDisplay *tdisp = draw_context.tdisp;
     const size_t cursor = tdisp->buffer.gap_offset;
     Line line = draw_context.line;
-    Font font = *tdisp->style->text.font;
+    Font font = tdisp->text.font;
 
     if (line.off <= cursor && cursor <= line.off + line.len) {
         /* The cursor is in this line */
@@ -760,7 +764,7 @@ static void drawCallback(GUIElement *elem)
     TextDisplay *tdisp = (TextDisplay*) elem;
 
     ClearBackground(tdisp->style->text.bgcolor);
-
+    
     bool drew_cursor = false;
     DrawContext draw_context;
     initDrawContext(&draw_context, tdisp);
@@ -770,6 +774,7 @@ static void drawCallback(GUIElement *elem)
                    draw_context.line_y, 
                    draw_context.line_num_w, 
                    draw_context.line_height,
+                   tdisp->lineno.font,
                    tdisp->style);
         drawSelection(draw_context);
         drawLineText(draw_context);
@@ -782,6 +787,7 @@ static void drawCallback(GUIElement *elem)
                    draw_context.line_y, 
                    draw_context.line_num_w, 
                    draw_context.line_height,
+                   tdisp->lineno.font,
                    tdisp->style);
         if (tdisp->focused) {
             Color color = tdisp->style->cursor.bgcolor;
@@ -801,6 +807,8 @@ static void drawCallback(GUIElement *elem)
 static void freeCallback(GUIElement *elem)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
+    UnloadFont(tdisp->text.font);
+    UnloadFont(tdisp->lineno.font);
     GapBuffer_free(&tdisp->buffer);
     free(elem);
 }
@@ -852,6 +860,14 @@ GUIElement *TextDisplay_new(Rectangle region,
         tdisp->selecting = false;
         tdisp->selection.active = false;
         
+        tdisp->text.font = LoadFontEx(style->text.font_file, 
+                                      style->text.font_size, 
+                                      NULL, 0);
+        tdisp->lineno.font = LoadFontEx(style->lineno.font_file, 
+                                        style->lineno.font_size, 
+                                        NULL, 0);
+
+
         if (file == NULL) {
             tdisp->file[0] = '\0';
             GapBuffer_initEmpty(&tdisp->buffer);
