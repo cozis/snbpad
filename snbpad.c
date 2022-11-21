@@ -64,7 +64,7 @@ void snbpad(void)
         .separator = {
             .size = 10,
         },
-        .resize_mode = SplitResizeMode_RESIZERIGHT,
+        .resize_mode = SplitResizeMode_KEEPRATIOS,
     };
 
     GUIElement *focused = NULL;
@@ -145,10 +145,11 @@ void snbpad(void)
         Vector2 cursor_point = {GetMouseX(), GetMouseY()};
         for (size_t i = 0; i < element_count && hovered == NULL; i++)
             if (CheckCollisionPointRec(cursor_point, elements[i]->region))
-                hovered = elements[i];
+                hovered = GUIElement_getHovered(elements[i], 
+                            cursor_point.x - elements[i]->region.x, 
+                            cursor_point.y - elements[i]->region.y);
 
         if (hovered != NULL) {
-
             Vector2 motion = GetMouseWheelMoveV();
             GUIElement_onMouseWheel(hovered, 5 * motion.y);
         }

@@ -883,6 +883,7 @@ static const GUIElementMethods methods = {
     .onCut = onCutCallback,
     .onSave = onSaveCallback,
     .onOpen = onOpenCallback,
+    .getHovered = NULL,
 };
 
 GUIElement *TextDisplay_new(Rectangle region,

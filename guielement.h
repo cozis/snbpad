@@ -13,6 +13,7 @@ typedef struct {
     void (*draw)(GUIElement*);
     void (*clickUp)(GUIElement*, int, int);
     GUIElement *(*onClickDown)(GUIElement*, int, int);
+    GUIElement *(*getHovered)(GUIElement*, int, int);
     void (*offClickDown)(GUIElement*);
     void (*onMouseWheel)(GUIElement*, int);
     void (*onMouseMotion)(GUIElement*, int, int);
@@ -59,6 +60,6 @@ void GUIElement_onSave(GUIElement *elem);
 void GUIElement_onOpen(GUIElement *elem);
 void GUIElement_onFocusLost(GUIElement *elem);
 void GUIElement_onFocusGained(GUIElement *elem);
-bool GUIElement_allowsFocus(GUIElement *elem);
+GUIElement *GUIElement_getHovered(GUIElement *elem, int x, int y);
 
 #endif

@@ -209,6 +209,21 @@ static void offClickDownCallback(GUIElement *elem)
     GUIElement_offClickDown(sv->children[1]);
 }
 
+static GUIElement*
+getHoveredCallback(GUIElement *elem, 
+                   int x, int y)
+{
+    int abs_x = x + elem->region.x;
+    int abs_y = y + elem->region.y;
+    Vector2 point = {abs_x, abs_y};
+    SplitView *sv = (SplitView*) elem;
+    if (CheckCollisionPointRec(point, sv->children[0]->region))
+        return sv->children[0];
+    if (CheckCollisionPointRec(point, sv->children[1]->region))
+        return sv->children[1];
+    return elem;
+}
+
 static void drawCallback(GUIElement *elem)
 {
     SplitView *sv = (SplitView*) elem;
@@ -238,6 +253,7 @@ static const GUIElementMethods methods = {
     .onCut = NULL,
     .onSave = NULL,
     .onOpen = NULL,
+    .getHovered = getHoveredCallback,
 };
 
 GUIElement *SplitView_new(Rectangle region,

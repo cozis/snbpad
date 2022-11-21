@@ -146,3 +146,12 @@ void GUIElement_onFocusGained(GUIElement *elem)
     if (elem->methods->onFocusGained != NULL)
         elem->methods->onFocusGained(elem);
 }
+
+GUIElement *GUIElement_getHovered(GUIElement *elem, 
+                                  int x, int y)
+{
+    if (elem->methods->getHovered == NULL)
+        return elem;
+    else
+        return elem->methods->getHovered(elem, x, y);
+}
