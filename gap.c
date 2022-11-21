@@ -15,14 +15,6 @@ static size_t countLines(const char *str, size_t len)
     return lineno;
 }
 
-static size_t countLinesInBuffer(GapBuffer *buf)
-{
-    size_t p = (buf->gap_offset + buf->gap_length);
-    size_t lineno = countLines(buf->data,     buf->gap_offset)
-                  + countLines(buf->data + p, buf->size - p);
-    return lineno+1; // +1?
-}
-
 static void moveBytesAfterGap(GapBuffer *buffer, size_t num)
 {
     if (num > buffer->gap_offset)
@@ -173,45 +165,56 @@ void GapBuffer_initEmpty(GapBuffer *buf)
     buf->size = 0;
     buf->gap_offset = 0;
     buf->gap_length = 0;
-    buf->lineno = 0;
+    buf->lineno = 1;
 }
 
 bool GapBuffer_initFile(GapBuffer *buf, const char *file)
 {
     GapBuffer_initEmpty(buf);
-    if (file != NULL) {
-        FILE *stream = fopen(file, "rb");
-        if (stream == NULL)
-            return false;
-
-        fseek(stream, 0, SEEK_END); // TODO: Check for errors
-        long size = ftell(stream); // TODO: Check for errors
-
-        if (!growGap(buf, size)) {
-            fclose(stream);
-            return false;
-        }
-
-        fseek(stream, 0, SEEK_SET); // TODO: Check for errors
-        fread(buf->data + buf->gap_offset + buf->gap_length - size, 1, size, stream);
-        if (ferror(stream)) {
-            fclose(stream);
-            return false;
-        }
-
-        // TODO: Swap \t with spaces while loading
-        //       the file.
-
-        buf->gap_length -= size;
-        buf->lineno = countLinesInBuffer(buf);
-        fclose(stream);
-    }
-    return true;
+    return GapBuffer_insertFile(buf, file);
 }
 
 void GapBuffer_free(GapBuffer *buf)
 {
     free(buf->data);
+}
+
+bool GapBuffer_insertFile(GapBuffer *buf,
+                          const char *file)
+{
+    bool ok;
+    if (file == NULL)
+        ok = true;
+    else {
+        FILE *stream = fopen(file, "rb");
+        if (stream == NULL)
+            ok = false;
+        else {
+            ok = GapBuffer_insertStream(buf, stream);
+            fclose(stream);
+        }
+    }
+    return ok;
+}
+
+bool GapBuffer_insertStream(GapBuffer *buf,
+                            FILE *stream)
+{
+    bool done = false;
+    char buffer[512];
+    while (!done) {
+        size_t num = fread(buffer, sizeof(char), sizeof(buffer), stream);   
+        if (num < sizeof(buffer)) {
+            if (ferror(stream))
+                return false;
+            else
+                done = feof(stream);
+        }
+
+        if (!GapBuffer_insertString(buf, buffer, num))
+            return false;
+    }
+    return true;
 }
 
 bool GapBuffer_insertString(GapBuffer *buf, 

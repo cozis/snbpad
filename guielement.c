@@ -1,11 +1,6 @@
 #include "xutf8.h"
 #include "guielement.h"
 
-bool GUIElement_allowsFocus(GUIElement *elem)
-{
-    return elem->methods->allows_focus;
-}
-
 void GUIElement_free(GUIElement *elem)
 {
     if (elem->methods->free != NULL)
@@ -31,11 +26,13 @@ void GUIElement_clickUp(GUIElement *elem,
         elem->methods->clickUp(elem, x, y);
 }
 
-void GUIElement_onClickDown(GUIElement *elem, 
+GUIElement *GUIElement_onClickDown(GUIElement *elem, 
                             int x, int y)
 {
-    if (elem->methods->onClickDown != NULL)
-        elem->methods->onClickDown(elem, x, y);
+    if (elem->methods->onClickDown == NULL)
+        return NULL;
+    else
+        return elem->methods->onClickDown(elem, x, y);
 }
 
 void GUIElement_offClickDown(GUIElement *elem)

@@ -15,6 +15,7 @@ typedef struct {
 
 typedef struct {
     GUIElement base;
+    Rectangle old_region;
     const TextDisplayStyle *style;
     struct {
         Font font;
@@ -32,6 +33,7 @@ typedef struct {
     struct {
         double intensity;
     } cursor;
+    RenderTexture2D texture;
     bool      focused;
     bool      selecting;
     Selection selection;
@@ -292,7 +294,15 @@ static void increaseVerticalScroll(TextDisplay *tdisp, int scroll_incr)
 static void tickCallback(GUIElement *elem, uint64_t time_in_ms)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
-    
+
+    if (tdisp->old_region.width != tdisp->base.region.width
+        || tdisp->old_region.height != tdisp->base.region.height) {
+        UnloadRenderTexture(tdisp->texture);
+        tdisp->texture = LoadRenderTexture(tdisp->base.region.width, 
+                                           tdisp->base.region.height);
+        tdisp->old_region = tdisp->base.region;
+    }
+
     double angular_velocity = 2 * M_PI / tdisp->style->cursor.blink_period;
     tdisp->cursor.intensity = sin(time_in_ms * angular_velocity);
 
@@ -367,21 +377,34 @@ getVerticalScrollbarPosition(TextDisplay *tdisp,
     }
 }
 
-static void onClickDownCallback(GUIElement *elem, 
-                                int x, int y)
+static bool 
+clickedOnScrollbarThumb(TextDisplay *td, 
+                        int x, int y)
+{
+    Rectangle v_scrollbar, v_thumb;
+    getVerticalScrollbarPosition(td, &v_scrollbar, &v_thumb);
+
+    Vector2 cursor_point = {x, y};
+    if (CheckCollisionPointRec(cursor_point, v_scrollbar))
+        /* Clicked on scrollbar */
+        if (CheckCollisionPointRec(cursor_point, v_thumb))
+            /* Clicked on thumb */
+            return true;
+    return false;
+}
+
+static GUIElement*
+onClickDownCallback(GUIElement *elem, 
+                    int x, int y)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
 
-    Rectangle v_scrollbar, v_thumb;
-    getVerticalScrollbarPosition(tdisp, &v_scrollbar, &v_thumb);
+    bool on_thumb = clickedOnScrollbarThumb(tdisp, x, y);
 
-    Vector2 cursor_point = {x, y};
-    if (CheckCollisionPointRec(cursor_point, v_scrollbar)) {
-        if (CheckCollisionPointRec(cursor_point, v_thumb)) {
-            tdisp->v_scroll.active = true;
-            tdisp->v_scroll.start_cursor = y;
-            tdisp->v_scroll.start_amount = tdisp->v_scroll.amount;
-        }
+    if (on_thumb) {
+        tdisp->v_scroll.active = true;
+        tdisp->v_scroll.start_cursor = y;
+        tdisp->v_scroll.start_amount = tdisp->v_scroll.amount;
     } else {
 
         if (tdisp->selection.active) {
@@ -394,6 +417,11 @@ static void onClickDownCallback(GUIElement *elem,
             tdisp->selection.end = tdisp->selection.start;
         }
     }
+
+    if (on_thumb)
+        return NULL;
+    else
+        return elem;
 }
 
 static void offClickDownCallback(GUIElement *elem)
@@ -763,6 +791,7 @@ static void drawCallback(GUIElement *elem)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
 
+    BeginTextureMode(tdisp->texture);
     ClearBackground(tdisp->style->text.bgcolor);
     
     bool drew_cursor = false;
@@ -802,11 +831,30 @@ static void drawCallback(GUIElement *elem)
     }
     drawVerticalScrollbar(draw_context);
     freeDrawContext(&draw_context);
+    EndTextureMode();
+
+    {
+        RenderTexture2D target = tdisp->texture;
+        Rectangle region = elem->region;
+        Rectangle src, dst;
+        src.x = 0;
+        src.y = 0;
+        src.width  =  region.width;
+        src.height = -region.height;
+        dst.x = region.x;
+        dst.y = region.y;
+        dst.width  = region.width;
+        dst.height = region.height;
+        Vector2 org = {0, 0};
+        DrawTexturePro(target.texture, src, 
+                       dst, org, 0, WHITE);
+    }
 }
 
 static void freeCallback(GUIElement *elem)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
+    UnloadRenderTexture(tdisp->texture);
     UnloadFont(tdisp->text.font);
     UnloadFont(tdisp->lineno.font);
     GapBuffer_free(&tdisp->buffer);
@@ -814,7 +862,6 @@ static void freeCallback(GUIElement *elem)
 }
 
 static const GUIElementMethods methods = {
-    .allows_focus = true,
     .free = freeCallback,
     .tick = tickCallback,
     .draw = drawCallback,
@@ -849,6 +896,8 @@ GUIElement *TextDisplay_new(Rectangle region,
         tdisp->base.methods = &methods;
         strncpy(tdisp->base.name, name, 
                 sizeof(tdisp->base.name));
+        tdisp->base.name[sizeof(tdisp->base.name)-1] = '\0';
+        tdisp->old_region = region;
         tdisp->style = style;
         tdisp->v_scroll.active = false;
         tdisp->v_scroll.force = 0;
@@ -859,13 +908,15 @@ GUIElement *TextDisplay_new(Rectangle region,
         tdisp->focused = false;
         tdisp->selecting = false;
         tdisp->selection.active = false;
-        
+        tdisp->texture = LoadRenderTexture(region.width, 
+                                           region.height);
+
         tdisp->text.font = LoadFontEx(style->text.font_file, 
                                       style->text.font_size, 
-                                      NULL, 0);
+                                      NULL, 250);
         tdisp->lineno.font = LoadFontEx(style->lineno.font_file, 
                                         style->lineno.font_size, 
-                                        NULL, 0);
+                                        NULL, 250);
 
 
         if (file == NULL) {

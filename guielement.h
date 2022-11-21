@@ -1,3 +1,6 @@
+#ifndef GUIELEMENT_H
+#define GUIELEMENT_H
+
 #include <stdint.h>
 #include <stddef.h>
 #include <raylib.h>
@@ -5,12 +8,11 @@
 typedef struct GUIElement GUIElement;
 
 typedef struct {
-    bool allows_focus;
     void (*free)(GUIElement*);
     void (*tick)(GUIElement*, uint64_t);
     void (*draw)(GUIElement*);
     void (*clickUp)(GUIElement*, int, int);
-    void (*onClickDown)(GUIElement*, int, int);
+    GUIElement *(*onClickDown)(GUIElement*, int, int);
     void (*offClickDown)(GUIElement*);
     void (*onMouseWheel)(GUIElement*, int);
     void (*onMouseMotion)(GUIElement*, int, int);
@@ -39,7 +41,7 @@ void GUIElement_free(GUIElement *elem);
 void GUIElement_tick(GUIElement *elem, uint64_t time);
 void GUIElement_draw(GUIElement *elem);
 void GUIElement_clickUp(GUIElement *elem, int x, int y);
-void GUIElement_onClickDown(GUIElement *elem, int x, int y);
+GUIElement *GUIElement_onClickDown(GUIElement *elem, int x, int y);
 void GUIElement_offClickDown(GUIElement *elem);
 void GUIElement_onMouseWheel(GUIElement *elem, int y);
 void GUIElement_onMouseMotion(GUIElement *elem, int x, int y);
@@ -58,3 +60,5 @@ void GUIElement_onOpen(GUIElement *elem);
 void GUIElement_onFocusLost(GUIElement *elem);
 void GUIElement_onFocusGained(GUIElement *elem);
 bool GUIElement_allowsFocus(GUIElement *elem);
+
+#endif
