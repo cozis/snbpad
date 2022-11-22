@@ -23,86 +23,73 @@ static void freeCallback(GUIElement *elem)
     free(elem);
 }
 
-static void tickCallback(GUIElement *elem, uint64_t time_in_ms)
+static void onResizeCallback(GUIElement *elem, 
+                             Rectangle old_region)
 {
     SplitView *sv = (SplitView*) elem;
 
-    bool  width_changed = (sv->old_region.width != sv->base.region.width);
-    bool height_changed = (sv->old_region.height != sv->base.region.height);
-    if (width_changed) {
-        if (sv->dir == SplitDirection_HORIZONTAL) {
-            int separator = sv->style->separator.size;
-            switch (sv->style->resize_mode) {
-                case SplitResizeMode_KEEPRATIOS: {
-                    int old_available = sv->old_region.width - separator;
-                    int new_available = elem->region.width   - separator;
+    Rectangle new_region = elem->region;
+    Rectangle old_subregion_1 = GUIElement_getRegion(sv->children[0]);
+    Rectangle old_subregion_2 = GUIElement_getRegion(sv->children[1]);
+    Rectangle new_subregion_1;
+    Rectangle new_subregion_2;
 
-                    int old_left_width = sv->children[0]->region.width;
-                    double left_ratio = (double) old_left_width / old_available;
-                    int new_left_width = left_ratio * new_available;
+    const int sep = sv->style->separator.size;
 
-                    sv->children[0]->region.width = new_left_width;
-                    sv->children[1]->region.width = new_available - new_left_width;
-                    sv->children[1]->region.x = sv->children[0]->region.x + new_left_width + separator;
-                } break;
-
-                case SplitResizeMode_RESIZELEFT: {
-                    int new_available = elem->region.width - separator;
-                    int new_left_width = new_available - sv->children[1]->region.width;
-                    sv->children[0]->region.width = new_left_width;
-                    
-                    int left_x = sv->children[0]->region.x;
-                    sv->children[1]->region.x = left_x + new_left_width + separator;
-                } break;
-
-                case SplitResizeMode_RESIZERIGHT: {
-                    int new_available = elem->region.width - separator;
-                    sv->children[1]->region.width = new_available - sv->children[0]->region.width;
-                } break;
-            }
-        } else {
-            sv->children[0]->region.width = elem->region.width;
-            sv->children[1]->region.width = elem->region.width;
+    if (sv->dir == SplitDirection_HORIZONTAL) {
+        int old_available = old_region.width - sep;
+        int new_available = new_region.width - sep;
+        new_subregion_1.x = new_region.x;
+        new_subregion_1.y = new_region.y;
+        new_subregion_1.height = new_region.height;
+        new_subregion_2.y = new_region.y;
+        new_subregion_2.height = new_region.height;
+        switch (sv->style->resize_mode) {
+            case SplitResizeMode_KEEPRATIOS:
+            new_subregion_1.width = new_available * (double) old_subregion_1.width / old_available;
+            new_subregion_2.width = new_available - new_subregion_1.width;
+            break;
+            case SplitResizeMode_RESIZELEFT:
+            new_subregion_1.width = new_available - old_subregion_2.width;
+            new_subregion_2.width = old_subregion_2.width;
+            break;
+            case SplitResizeMode_RESIZERIGHT:
+            new_subregion_1.width = old_subregion_1.width;
+            new_subregion_2.width = new_available - old_subregion_1.width;
+            break;
         }
-    }
-    if (height_changed) {
-        if (sv->dir == SplitDirection_VERTICAL) {
-            int separator = sv->style->separator.size;
-            switch (sv->style->resize_mode) {
-                case SplitResizeMode_KEEPRATIOS: {
-                    int old_available = sv->old_region.height - separator;
-                    int new_available = elem->region.height   - separator;
-
-                    int old_left_height = sv->children[0]->region.height;
-                    double left_ratio = (double) old_left_height / old_available;
-                    int new_left_height = left_ratio * new_available;
-
-                    sv->children[0]->region.height = new_left_height;
-                    sv->children[1]->region.height = new_available - new_left_height;
-                    sv->children[1]->region.y = sv->children[0]->region.y + new_left_height + separator;
-                } break;
-
-                case SplitResizeMode_RESIZELEFT: {
-                    int new_available = elem->region.height - separator;
-                    int new_left_height = new_available - sv->children[1]->region.height;
-                    sv->children[0]->region.height = new_left_height;
-                    
-                    int left_y = sv->children[0]->region.y;
-                    sv->children[1]->region.y = left_y + new_left_height + separator;
-                } break;
-
-                case SplitResizeMode_RESIZERIGHT: {
-                    int new_available = elem->region.height - separator;
-                    sv->children[1]->region.height = new_available - sv->children[0]->region.height;
-                } break;
-            }
-        } else {
-            sv->children[0]->region.height = elem->region.height;
-            sv->children[1]->region.height = elem->region.height;
+        new_subregion_2.x = new_subregion_1.x + new_subregion_1.width + sep;
+    } else {
+        int old_available = old_region.height - sep;
+        int new_available = new_region.height - sep;
+        new_subregion_1.y = new_region.y;
+        new_subregion_1.x = new_region.x;
+        new_subregion_1.width = new_region.width;
+        new_subregion_2.x = new_region.x;
+        new_subregion_2.width = new_region.width;
+        switch (sv->style->resize_mode) {
+            case SplitResizeMode_KEEPRATIOS:
+            new_subregion_1.height = new_available * (double) old_subregion_1.height / old_available;
+            new_subregion_2.height = new_available - new_subregion_1.height;
+            break;
+            case SplitResizeMode_RESIZELEFT:
+            new_subregion_1.height = new_available - old_subregion_2.height;
+            new_subregion_2.height = old_subregion_2.height;
+            break;
+            case SplitResizeMode_RESIZERIGHT:
+            new_subregion_1.height = old_subregion_1.height;
+            new_subregion_2.height = new_available - old_subregion_1.height;
+            break;
         }
+        new_subregion_2.y = new_subregion_1.y + new_subregion_1.height + sep;
     }
-    sv->old_region = sv->base.region;
+    GUIElement_setRegion(sv->children[0], new_subregion_1);
+    GUIElement_setRegion(sv->children[1], new_subregion_2);
+}
 
+static void tickCallback(GUIElement *elem, uint64_t time_in_ms)
+{
+    SplitView *sv = (SplitView*) elem;
     GUIElement_tick(sv->children[0], time_in_ms);
     GUIElement_tick(sv->children[1], time_in_ms);
 }
@@ -115,22 +102,41 @@ static void onMouseMotionCallback(GUIElement *elem,
 
     SplitView *sv = (SplitView*) elem;
     if (sv->reshaping.active) {
+        
         sv->reshaping.active = true;
+        
+        Rectangle region = GUIElement_getRegion(elem);
+        
+        Rectangle new_subregion_1;
+        Rectangle new_subregion_2;
+
+        int sep = sv->style->separator.size;
+        new_subregion_1.x = region.x;
+        new_subregion_1.y = region.y;
         switch (sv->dir) {
+
             case SplitDirection_VERTICAL: {
                 int sep_y = abs_y - sv->reshaping.start_x_or_y_relative_to_separator;
-                sv->children[0]->region.height = sep_y - sv->children[0]->region.y;
-                sv->children[1]->region.y = sep_y + sv->style->separator.size;
-                sv->children[1]->region.height = elem->region.height - sv->style->separator.size - sv->children[0]->region.height;
+                new_subregion_1.width  = region.width;
+                new_subregion_1.height = sep_y - region.y;
+                new_subregion_2.x = region.x;
+                new_subregion_2.y = sep_y + sep;
+                new_subregion_2.width  = region.width;
+                new_subregion_2.height = region.height - new_subregion_1.height - sep;
             } break;
             
             case SplitDirection_HORIZONTAL: {
                 int sep_x = abs_x - sv->reshaping.start_x_or_y_relative_to_separator;
-                sv->children[0]->region.width = sep_x - sv->children[0]->region.x;
-                sv->children[1]->region.x = sep_x + sv->style->separator.size;
-                sv->children[1]->region.width = elem->region.width - sv->style->separator.size - sv->children[0]->region.width;
+                new_subregion_1.width = sep_x - region.x;
+                new_subregion_1.height  = region.height;
+                new_subregion_2.x = sep_x + sep;
+                new_subregion_2.y = region.y;
+                new_subregion_2.height = region.height;
+                new_subregion_2.width  = region.width - new_subregion_1.width - sep;
             } break;
         }
+        GUIElement_setRegion(sv->children[0], new_subregion_1);
+        GUIElement_setRegion(sv->children[1], new_subregion_2);
     }
     GUIElement_onMouseMotion(sv->children[0], 
         abs_x - sv->children[0]->region.x, 
@@ -227,12 +233,22 @@ getHoveredCallback(GUIElement *elem,
 {
     int abs_x = x + elem->region.x;
     int abs_y = y + elem->region.y;
+
     Vector2 point = {abs_x, abs_y};
     SplitView *sv = (SplitView*) elem;
-    if (CheckCollisionPointRec(point, sv->children[0]->region))
-        return sv->children[0];
-    if (CheckCollisionPointRec(point, sv->children[1]->region))
-        return sv->children[1];
+
+    Rectangle subregion_1 = GUIElement_getRegion(sv->children[0]);
+    Rectangle subregion_2 = GUIElement_getRegion(sv->children[1]);
+
+    if (CheckCollisionPointRec(point, subregion_1))
+        return GUIElement_getHovered(sv->children[0],
+                                     abs_x - subregion_1.x,
+                                     abs_y - subregion_1.y);
+
+    if (CheckCollisionPointRec(point, subregion_2))
+        return GUIElement_getHovered(sv->children[1],
+                                     abs_x - subregion_2.x,
+                                     abs_y - subregion_2.y);
     return elem;
 }
 
@@ -266,6 +282,7 @@ static const GUIElementMethods methods = {
     .onSave = NULL,
     .onOpen = NULL,
     .getHovered = getHoveredCallback,
+    .onResize = onResizeCallback,
 };
 
 GUIElement *SplitView_new(Rectangle region,
@@ -289,32 +306,35 @@ GUIElement *SplitView_new(Rectangle region,
         sv->style = style;
         sv->reshaping.active = false;
 
+        int sep = style->separator.size;
+        Rectangle subregion_1;
+        Rectangle subregion_2;
         switch (dir) {
             case SplitDirection_VERTICAL: {
-                int sep_w = style->separator.size;
-                int view_h = (region.height - sep_w) / 2;
-                child_0->region.x = region.x;
-                child_0->region.y = region.y;
-                child_0->region.width  = region.width;
-                child_0->region.height = view_h;
-                child_1->region.x = region.x;
-                child_1->region.y = region.y + view_h + sep_w;
-                child_1->region.width  = region.width;
-                child_1->region.height = view_h;
+                int available = (region.height - sep) / 2;
+                subregion_1.x = region.x;
+                subregion_1.y = region.y;
+                subregion_1.width  = region.width;
+                subregion_1.height = available;
+                subregion_2.x = region.x;
+                subregion_2.y = region.y + available + sep;
+                subregion_2.width  = region.width;
+                subregion_2.height = available;
             } break;
             case SplitDirection_HORIZONTAL: {
-                int sep_w = style->separator.size;
-                int view_w = (region.width - sep_w) / 2;
-                child_0->region.x = region.x;
-                child_0->region.y = region.y;
-                child_0->region.width  = view_w;
-                child_0->region.height = region.height;
-                child_1->region.x = region.x + view_w + sep_w;
-                child_1->region.y = region.y;
-                child_1->region.width  = view_w;
-                child_1->region.height = region.height;
+                int available = (region.width - sep) / 2;
+                subregion_1.x = region.x;
+                subregion_1.y = region.y;
+                subregion_1.width  = available;
+                subregion_1.height = region.height;
+                subregion_2.x = region.x + available + sep;
+                subregion_2.y = region.y;
+                subregion_2.width  = available;
+                subregion_2.height = region.height;
             } break;
         }
+        GUIElement_setRegion(child_0, subregion_1);
+        GUIElement_setRegion(child_1, subregion_2);
     }
     return (GUIElement*) sv;
 }

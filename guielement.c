@@ -155,3 +155,22 @@ GUIElement *GUIElement_getHovered(GUIElement *elem,
     else
         return elem->methods->getHovered(elem, x, y);
 }
+
+void GUIElement_setRegion(GUIElement *elem, Rectangle region)
+{
+    Rectangle old_region = elem->region;
+    bool something_changed = old_region.x != region.x 
+                          || old_region.y != region.y
+                          || old_region.width != region.width
+                          || old_region.height != region.height;
+    if (something_changed) {
+        elem->region = region;
+        if (elem->methods->onResize != NULL)
+            elem->methods->onResize(elem, old_region);
+    }
+}
+
+Rectangle GUIElement_getRegion(GUIElement *elem)
+{
+    return elem->region;
+}

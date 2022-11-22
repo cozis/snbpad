@@ -30,6 +30,7 @@ typedef struct {
     void (*onOpen)(GUIElement*);
     void (*onFocusLost)(GUIElement*);
     void (*onFocusGained)(GUIElement*);
+    void (*onResize)(GUIElement*, Rectangle);
 } GUIElementMethods;
 
 struct GUIElement {
@@ -61,5 +62,7 @@ void GUIElement_onOpen(GUIElement *elem);
 void GUIElement_onFocusLost(GUIElement *elem);
 void GUIElement_onFocusGained(GUIElement *elem);
 GUIElement *GUIElement_getHovered(GUIElement *elem, int x, int y);
+void      GUIElement_setRegion(GUIElement *elem, Rectangle region);
+Rectangle GUIElement_getRegion(GUIElement *elem);
 
 #endif

@@ -5,8 +5,16 @@
 #include "gap.h"
 #include "gapiter.h"
 #include "utils.h"
+#include "treeview.h"
 #include "splitview.h"
 #include "textdisplay.h"
+
+static void treeViewCallback(const char *file, 
+                             size_t file_len, 
+                             void *userp)
+{
+    fprintf(stderr, "Opening [%s]\n", file);
+}
 
 void snbpad(void)
 {
@@ -65,47 +73,91 @@ void snbpad(void)
         .resize_mode = SplitResizeMode_KEEPRATIOS,
     };
 
+    SplitViewStyle tree_split_view_style = {
+        .separator = { .size = 3, },
+        .resize_mode = SplitResizeMode_RESIZERIGHT,
+    };
+
+    TreeViewStyle tree_view_style = {
+        .bgcolor = {0x40, 0x40, 0x40, 0xff},
+        .fgcolor = {0xcc, 0xcc, 0xcc, 0xff},
+        .font_file = font_file,
+        .font_size = 23,
+        .auto_line_height = false,
+        .line_height = 30,
+        .padding_top = 10,
+        .padding_left = 10,
+        .subtree_padding_left = 20,
+    };
+
     GUIElement *focused = NULL;
     GUIElement *last_focused = NULL;
     GUIElement *elements[2]; 
     size_t element_count = 0;
 
-    GUIElement *ltd;
+    GUIElement *sv2;
     {
-        Rectangle region = {0, 0, 0, 0}; // Anything goes.
-        ltd = TextDisplay_new(region, "Left-Text-Display", NULL, &style);
-        if (ltd == NULL)
-            return;
-    }
+        GUIElement *sv;
+        {
+            GUIElement *ltd;
+            {
+                Rectangle region = {0, 0, 0, 0}; // Anything goes.
+                ltd = TextDisplay_new(region, "Left-Text-Display", NULL, &style);
+                if (ltd == NULL)
+                    return;
+            }
 
-    GUIElement *rtd;
-    {
-        Rectangle region = {0, 0, 0, 0}; // Anything goes.
-        rtd = TextDisplay_new(region, "Right-Text-Display", NULL, &style);
-        if (rtd == NULL) {
-            GUIElement_free(ltd);
-            return;
+            GUIElement *rtd;
+            {
+                Rectangle region = {0, 0, 0, 0}; // Anything goes.
+                rtd = TextDisplay_new(region, "Right-Text-Display", NULL, &style);
+                if (rtd == NULL) {
+                    GUIElement_free(ltd);
+                    return;
+                }
+            }
+            
+            Rectangle region = {0, 0, 0, 0};
+            sv = SplitView_new(region, "Split-View",
+                               ltd, rtd, SplitDirection_HORIZONTAL,
+                               &split_view_style);
+            if (sv == NULL) {
+                GUIElement_free(ltd);
+                GUIElement_free(rtd);
+                return;
+            }
         }
-    }
 
-    GUIElement *sv;
-    {
+        GUIElement *tv;
+        {
+            Rectangle region = {0};
+            const char *tree_view_path = "/home/francesco/Desktop/Workspace";
+            tv = TreeView_new(region, "Tree-View", 
+                              tree_view_path, 
+                              treeViewCallback,
+                              &tree_view_style,
+                              NULL);
+            if (tv == NULL) {
+                GUIElement_free(sv);
+                return;
+            }
+        }
         Rectangle region = {
-            .x = 0,
-            .y = 0,
-            .width = w,
-            .height = h,
+            .x = 5,
+            .y = 5,
+            .width = w - 10,
+            .height = h - 10,
         };
-        sv = SplitView_new(region, "Split-View",
-                           ltd, rtd, SplitDirection_HORIZONTAL,
-                           &split_view_style);
-        if (sv == NULL) {
-            GUIElement_free(ltd);
-            GUIElement_free(rtd);
+        sv2 = SplitView_new(region, "Split-View-2",
+                            tv, sv, SplitDirection_HORIZONTAL,
+                            &tree_split_view_style);
+        if (sv2 == NULL) {
+            GUIElement_free(sv);
+            GUIElement_free(tv);
             return;
         }
     }
-    elements[element_count++] = sv;
+    elements[element_count++] = sv2;
 
     int arrow_press_interval = 70;
 
@@ -128,14 +180,11 @@ void snbpad(void)
         time_in_ms += ms_per_frame;
 
         if (IsWindowResized()) {
-            w = GetScreenWidth();
-            h = GetScreenHeight();
-            sv->region = (Rectangle) {
-                .x = 0,
-                .y = 0,
-                .width = w,
-                .height = h,
-            };
+            GUIElement_setRegion(sv2, (Rectangle) {
+                .width = GetScreenWidth() - 10,
+                .height = GetScreenHeight() - 10,
+                .x = 5, .y = 5,
+            });
         }
         
         GUIElement *hovered = NULL;
@@ -308,6 +357,15 @@ void snbpad(void)
         ClearBackground(RAYWHITE);
         for (size_t i = 0; i < element_count; i++)
             GUIElement_draw(elements[i]);
+
+/*
+        if (hovered != NULL)
+            DrawRectangle(hovered->region.x, 
+                          hovered->region.y, 
+                          hovered->region.width, 
+                          hovered->region.height, 
+                          DARKPURPLE);
+*/
         EndDrawing();
         SetTraceLogLevel(LOG_DEBUG);
     }

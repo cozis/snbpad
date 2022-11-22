@@ -6,7 +6,7 @@ LFLAGS = -l:libraylib.a -lm #-fsanitize=address
 
 all: snbpad
 
-snbpad: sfd.c guielement.c snbpad.c gap.c gapiter.c textdisplay.c splitview.c xutf8.c
+snbpad: sfd.c textrenderutils.c treeview.c guielement.c snbpad.c gap.c gapiter.c textdisplay.c splitview.c xutf8.c
 	gcc $^ -o $@ $(CFLAGS) $(LFLAGS)
 
 clean:
