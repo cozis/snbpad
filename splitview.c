@@ -255,6 +255,12 @@ getHoveredCallback(GUIElement *elem,
 static void drawCallback(GUIElement *elem)
 {
     SplitView *sv = (SplitView*) elem;
+    Rectangle separator = getSeparatorRegion(sv);
+    DrawRectangle(separator.x, 
+                  separator.y,
+                  separator.width,
+                  separator.height,
+                  sv->style->bgcolor);
     GUIElement_draw(sv->children[0]);
     GUIElement_draw(sv->children[1]);
 }
@@ -283,6 +289,7 @@ static const GUIElementMethods methods = {
     .onOpen = NULL,
     .getHovered = getHoveredCallback,
     .onResize = onResizeCallback,
+    .openFile = NULL,
 };
 
 GUIElement *SplitView_new(Rectangle region,

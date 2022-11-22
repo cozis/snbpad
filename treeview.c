@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include <libgen.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include "treeview.h"
 #include "textrenderutils.h"
@@ -221,6 +222,8 @@ typedef struct {
     ItemPool pool;
     Font     font;
     RenderTexture2D texture;
+    char   path[1024];
+    size_t path_len;
     const TreeViewStyle *style;
     void (*callback)(const char*, size_t, void*);
     void *userp;
@@ -299,9 +302,16 @@ static int getVisibleTreeItemByIndex(TreeView *tv, size_t queried_i, Item **stac
                                         queried_i, depth, max_depth);
 }
 
-static size_t concatPath(Item **list, size_t count, char dst[static 1024])
+static size_t concatPath(const char *base, size_t base_len,
+                         Item **list, size_t count, 
+                         char dst[static 1024])
 {
     size_t w = 0; // Bytes written
+
+    memcpy(dst, base, base_len);
+    w += base_len;
+    dst[w++] = '/';
+
     for (size_t i = 0; i < count; i++) {
         char  *src = list[i]->name;
         size_t len = list[i]->name_len;
@@ -365,7 +375,7 @@ onClickDownCallback(GUIElement *elem,
             item->open = !item->open;
         else {
             char path[1024];
-            size_t len = concatPath(stack, depth, path);
+            size_t len = concatPath(tv->path, tv->path_len, stack, depth, path);
             if (tv->callback != NULL)
                 tv->callback(path, len, tv->userp);
         }
@@ -499,6 +509,9 @@ GUIElement *TreeView_new(Rectangle region,
     strncpy(tv->base.name, name, sizeof(tv->base.name));
     tv->base.name[sizeof(tv->base.name)-1] = '\0';
 
+    strcpy(tv->path, path);
+    tv->path_len = path_len;
+
     ItemPool *pool = &tv->pool;
     ItemPool_init(pool);
 
@@ -517,5 +530,6 @@ GUIElement *TreeView_new(Rectangle region,
     tv->texture = LoadRenderTexture(region.width, region.height);
     tv->userp = userp;
     tv->callback = callback;
+
     return (GUIElement*) tv;
 }

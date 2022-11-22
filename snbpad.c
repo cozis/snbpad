@@ -9,11 +9,18 @@
 #include "splitview.h"
 #include "textdisplay.h"
 
+GUIElement *focused = NULL;
+GUIElement *last_focused = NULL;
+GUIElement *elements[2]; 
+size_t element_count = 0;
+
 static void treeViewCallback(const char *file, 
                              size_t file_len, 
                              void *userp)
 {
     fprintf(stderr, "Opening [%s]\n", file);
+    if (last_focused != NULL)
+        GUIElement_openFile(last_focused, file);
 }
 
 void snbpad(void)
@@ -37,9 +44,9 @@ void snbpad(void)
             .fgcolor = {0xcc, 0xcc, 0xcc, 0xff},
             .bgcolor = {0x33, 0x33, 0x33, 0xff},
             .font_file = font_file,
-            .font_size = 30,
-            .auto_width = false,
-            .width = 60,
+            .font_size = 22,
+            .auto_width = true,
+            //.width = 40,
             .h_align = TextAlignH_RIGHT,
             .v_align = TextAlignV_CENTER,
             .padding_up = 3,
@@ -50,7 +57,7 @@ void snbpad(void)
         .text = {
             .nobg = false,
             .font_file = font_file,
-            .font_size = 30,
+            .font_size = 22,
             .v_align = TextAlignV_CENTER,
             .bgcolor = {48, 56, 65, 255},
             .fgcolor = {0xee, 0xee, 0xee, 0xff},
@@ -69,13 +76,15 @@ void snbpad(void)
     };
 
     SplitViewStyle split_view_style = {
-        .separator = { .size = 3, },
+        .separator = { .size = 15, },
         .resize_mode = SplitResizeMode_KEEPRATIOS,
+        .bgcolor = {48, 56, 65, 255},
     };
 
     SplitViewStyle tree_split_view_style = {
-        .separator = { .size = 3, },
+        .separator = { .size = 15, },
         .resize_mode = SplitResizeMode_RESIZERIGHT,
+        .bgcolor = {0x40, 0x40, 0x40, 0xff},
     };
 
     TreeViewStyle tree_view_style = {
@@ -89,11 +98,6 @@ void snbpad(void)
         .padding_left = 10,
         .subtree_padding_left = 20,
     };
-
-    GUIElement *focused = NULL;
-    GUIElement *last_focused = NULL;
-    GUIElement *elements[2]; 
-    size_t element_count = 0;
 
     GUIElement *sv2;
     {
@@ -143,10 +147,10 @@ void snbpad(void)
             }
         }
         Rectangle region = {
-            .x = 5,
-            .y = 5,
-            .width = w - 10,
-            .height = h - 10,
+            .x = 0,
+            .y = 0,
+            .width = w,
+            .height = h,
         };
         sv2 = SplitView_new(region, "Split-View-2",
                             tv, sv, SplitDirection_HORIZONTAL,
@@ -181,9 +185,9 @@ void snbpad(void)
 
         if (IsWindowResized()) {
             GUIElement_setRegion(sv2, (Rectangle) {
-                .width = GetScreenWidth() - 10,
-                .height = GetScreenHeight() - 10,
-                .x = 5, .y = 5,
+                .width = GetScreenWidth(),
+                .height = GetScreenHeight(),
+                .x = 0, .y = 0,
             });
         }
         

@@ -174,3 +174,10 @@ Rectangle GUIElement_getRegion(GUIElement *elem)
 {
     return elem->region;
 }
+
+bool GUIElement_openFile(GUIElement *elem, const char *file)
+{
+    if (elem->methods->openFile != NULL)
+        return elem->methods->openFile(elem, file);
+    return false;
+}

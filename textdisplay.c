@@ -491,12 +491,47 @@ static void onSaveCallback(GUIElement *elem)
 
     FILE *stream = fopen(tdisp->file, "wb");
     if (stream == NULL) {
-        TraceLog(LOG_ERROR, "Failed to open \"%s\" in write mode\n", tdisp->file);
+        TraceLog(LOG_ERROR, "Failed to open \"%s\" in write mode", tdisp->file);
     } else {
         if (!GapBuffer_saveToStream(&tdisp->buffer, stream))
             TraceLog(LOG_ERROR, "Failed to save to \"%s\"\n", tdisp->file);
         fclose(stream);
     }
+}
+
+static bool openFileCallback(GUIElement *elem, 
+                             const char *file)
+{
+    TextDisplay *td = (TextDisplay*) elem;
+    
+    bool opened = false;
+
+    size_t file_len = strlen(file);
+
+    if (file_len >= sizeof(td->file))
+        // This file name is too long to be
+        // held by the widget.
+        TraceLog(LOG_ERROR, "File name is too long to be stored");
+    else {
+
+        FILE *stream = fopen(file, "rb");
+        if (stream == NULL)
+            TraceLog(LOG_ERROR, "Failed to open \"%s\" in read mode", file);
+        else {
+            GapBuffer buffer2;
+            if (!GapBuffer_initFile(&buffer2, file)) 
+                TraceLog(LOG_ERROR, "Failed to insert \"%s\" into the gap buffer", file);
+            else {
+                GapBuffer_free(&td->buffer);
+                td->buffer = buffer2;
+                strcpy(td->file, file);
+                TraceLog(LOG_INFO, "Opened file \"%s\"", file);
+                opened = true;
+            }
+            fclose(stream);
+        }
+    }
+    return opened;
 }
 
 typedef struct {
@@ -758,6 +793,7 @@ static const GUIElementMethods methods = {
     .onOpen = onOpenCallback,
     .getHovered = NULL,
     .onResize = onResizeCallback,
+    .openFile = openFileCallback,
 };
 
 GUIElement *TextDisplay_new(Rectangle region,

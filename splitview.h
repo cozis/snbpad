@@ -14,6 +14,7 @@ typedef struct {
         unsigned int size;
     } separator;
     SplitResizeMode resize_mode;
+    Color bgcolor;
 } SplitViewStyle;
 
 typedef enum {
