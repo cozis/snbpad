@@ -110,10 +110,11 @@ static void tickCallback(GUIElement *elem, uint64_t time_in_ms)
 static void onMouseMotionCallback(GUIElement *elem, 
                                   int x, int y)
 {
+    int abs_x = x + elem->region.x;
+    int abs_y = y + elem->region.y;
+
     SplitView *sv = (SplitView*) elem;
     if (sv->reshaping.active) {
-        int abs_x = x + elem->region.x;
-        int abs_y = y + elem->region.y;
         sv->reshaping.active = true;
         switch (sv->dir) {
             case SplitDirection_VERTICAL: {
@@ -131,8 +132,12 @@ static void onMouseMotionCallback(GUIElement *elem,
             } break;
         }
     }
-    GUIElement_onMouseMotion(sv->children[0], x, y);
-    GUIElement_onMouseMotion(sv->children[1], x, y);
+    GUIElement_onMouseMotion(sv->children[0], 
+        abs_x - sv->children[0]->region.x, 
+        abs_y - sv->children[0]->region.y);
+    GUIElement_onMouseMotion(sv->children[1], 
+        abs_x - sv->children[1]->region.x, 
+        abs_y - sv->children[1]->region.y);
 }
 
 static void clickUpCallback(GUIElement *elem, 
@@ -140,8 +145,15 @@ static void clickUpCallback(GUIElement *elem,
 {
     SplitView *sv = (SplitView*) elem;
     sv->reshaping.active = false;
-    GUIElement_clickUp(sv->children[0], x, y);
-    GUIElement_clickUp(sv->children[1], x, y);
+
+    int abs_x = x + elem->region.x;
+    int abs_y = y + elem->region.y;
+    GUIElement_clickUp(sv->children[0],
+        abs_x - sv->children[0]->region.x, 
+        abs_y - sv->children[0]->region.y);
+    GUIElement_clickUp(sv->children[1],
+        abs_x - sv->children[1]->region.x, 
+        abs_y - sv->children[1]->region.y);
 }
 
 static Rectangle

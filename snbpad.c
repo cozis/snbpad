@@ -61,9 +61,7 @@ void snbpad(void)
     };
 
     SplitViewStyle split_view_style = {
-        .separator = {
-            .size = 10,
-        },
+        .separator = { .size = 3, },
         .resize_mode = SplitResizeMode_KEEPRATIOS,
     };
 
@@ -93,10 +91,10 @@ void snbpad(void)
     GUIElement *sv;
     {
         Rectangle region = {
-            .x = 10,
-            .y = 20,
-            .width = w - 20,
-            .height = h - 40,
+            .x = 0,
+            .y = 0,
+            .width = w,
+            .height = h,
         };
         sv = SplitView_new(region, "Split-View",
                            ltd, rtd, SplitDirection_HORIZONTAL,
@@ -133,10 +131,10 @@ void snbpad(void)
             w = GetScreenWidth();
             h = GetScreenHeight();
             sv->region = (Rectangle) {
-                .x = 10,
-                .y = 20,
-                .width = w - 20,
-                .height = h - 40,
+                .x = 0,
+                .y = 0,
+                .width = w,
+                .height = h,
             };
         }
         
