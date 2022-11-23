@@ -337,14 +337,6 @@ static void onArrowRightDownCallback(GUIElement *elem)
     GapBuffer_moveCursorForward(&tdisp->buffer);
 }
 
-static void onTabDownCallback(GUIElement *elem)
-{
-    TextDisplay *tdisp = (TextDisplay*) elem;
-
-    tdisp->selection.active = false;
-    GapBuffer_insertString(&tdisp->buffer, "    ", 4);                         
-}
-
 static void onBackspaceDownCallback(GUIElement *elem)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
@@ -462,7 +454,7 @@ static void onOpenCallback(GUIElement *elem)
         // Swap the current one with the new one
         GapBuffer_free(&tdisp->buffer);
         tdisp->buffer = temp;
-
+        tdisp->v_scroll.amount = 0;
         strncpy(tdisp->file, file, sizeof(tdisp->file));
         updateWindowTitle(tdisp);
     }
@@ -524,6 +516,7 @@ static bool openFileCallback(GUIElement *elem,
             else {
                 GapBuffer_free(&td->buffer);
                 td->buffer = buffer2;
+                td->v_scroll.amount = 0;
                 strcpy(td->file, file);
                 TraceLog(LOG_INFO, "Opened file \"%s\"", file);
                 opened = true;
@@ -608,8 +601,8 @@ static void drawLineno(int no, int x, int y,
         }
         switch (style->lineno.v_align) {
             case TextAlignV_TOP:    text_y = y + style->lineno.padding_up; break;
-            case TextAlignV_CENTER: text_y = y + (h - text_h); break;
-            case TextAlignV_BOTTOM: text_y = y + (h - text_h) / 2 - style->lineno.padding_down; break;
+            case TextAlignV_CENTER: text_y = y + (h - text_h) / 2; break;
+            case TextAlignV_BOTTOM: text_y = y + (h - text_h) - style->lineno.padding_down; break;
         }
         renderString(font, s, n, text_x, text_y, 
                      style->lineno.font_size, 
@@ -630,14 +623,21 @@ static void drawSelection(DrawContext draw_context)
 
         if (sel_abs_off < line.off + line.len && sel_abs_off + sel_len > line.off) {
 
-            size_t rel_head = MAX(sel_rel_off, 0);
-            size_t rel_tail = MIN(sel_rel_off + sel_len, line.len);
+            int sel_w;
+            int sel_x;
+            if (line.len == 0) {
+                sel_w = 10;
+                sel_x = draw_context.line_x 
+                      + draw_context.line_num_w;;
+            } else {
+                size_t rel_head = MAX(sel_rel_off, 0);
+                size_t rel_tail = MIN(sel_rel_off + sel_len, line.len);
             
-            Font font = tdisp->text.font;
-            int sel_w = calculateStringRenderWidth(font, tdisp->style->text.font_size, line.str + rel_head, rel_tail - rel_head);
-            int sel_x = calculateStringRenderWidth(font, tdisp->style->text.font_size, line.str, rel_head)
+                Font font = tdisp->text.font;
+                sel_w = calculateStringRenderWidth(font, tdisp->style->text.font_size, line.str + rel_head, rel_tail - rel_head);
+                sel_x = calculateStringRenderWidth(font, tdisp->style->text.font_size, line.str, rel_head)
                       + draw_context.line_x + draw_context.line_num_w;
-
+            }
             DrawRectangle(
                 sel_x, draw_context.line_y, 
                 sel_w, draw_context.line_height,
@@ -784,7 +784,6 @@ static const GUIElementMethods methods = {
     .onArrowRightDown = onArrowRightDownCallback,
     .onReturnDown = onReturnDownCallback,
     .onBackspaceDown = onBackspaceDownCallback,
-    .onTabDown = onTabDownCallback,
     .onTextInput = onTextInputCallback,
     .onPaste = onPasteCallback,
     .onCopy = onCopyCallback,

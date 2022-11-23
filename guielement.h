@@ -21,7 +21,6 @@ typedef struct {
     void (*onArrowRightDown)(GUIElement*);
     void (*onReturnDown)(GUIElement*);
     void (*onBackspaceDown)(GUIElement*);
-    void (*onTabDown)(GUIElement*);
     void (*onTextInput)(GUIElement*, const char*, size_t);
     void (*onPaste)(GUIElement*);
     void (*onCopy)(GUIElement*);

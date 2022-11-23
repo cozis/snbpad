@@ -1,6 +1,8 @@
 #include <time.h>
 #include <stdio.h>
 #include <assert.h>
+#include <string.h>
+#include <unistd.h>
 #include <raylib.h>
 #include "gap.h"
 #include "gapiter.h"
@@ -42,7 +44,7 @@ void snbpad(void)
             .hide = false,
             .nobg = false,
             .fgcolor = {0xcc, 0xcc, 0xcc, 0xff},
-            .bgcolor = {0x33, 0x33, 0x33, 0xff},
+            .bgcolor = {48, 56, 65, 255},//{0x33, 0x33, 0x33, 0xff},
             .font_file = font_file,
             .font_size = 22,
             .auto_width = true,
@@ -61,7 +63,7 @@ void snbpad(void)
             .v_align = TextAlignV_CENTER,
             .bgcolor = {48, 56, 65, 255},
             .fgcolor = {0xee, 0xee, 0xee, 0xff},
-            .selection_bgcolor = {0xcc, 0xcc, 0xff, 0xff},
+            .selection_bgcolor = {87, 95, 104, 0xff},
         },
         .cursor = {
             .blink_period = 500, 
@@ -78,19 +80,19 @@ void snbpad(void)
     SplitViewStyle split_view_style = {
         .separator = { .size = 15, },
         .resize_mode = SplitResizeMode_KEEPRATIOS,
-        .bgcolor = {48, 56, 65, 255},
+        .bgcolor = {0x33, 0x33, 0x33, 0xff},
     };
 
     SplitViewStyle tree_split_view_style = {
         .separator = { .size = 15, },
         .resize_mode = SplitResizeMode_RESIZERIGHT,
-        .bgcolor = {0x40, 0x40, 0x40, 0xff},
+        .bgcolor = {0x33, 0x33, 0x33, 0xff},
     };
 
     TreeViewStyle tree_view_style = {
-        .bgcolor = {0x40, 0x40, 0x40, 0xff},
+        .bgcolor = {0x33, 0x33, 0x33, 0xff},
         .fgcolor = {0xcc, 0xcc, 0xcc, 0xff},
-        .font_file = font_file,
+        .font_file = "/usr/share/fonts/TTF/Inconsolata-Light.ttf",
         .font_size = 23,
         .auto_line_height = false,
         .line_height = 30,
@@ -135,7 +137,9 @@ void snbpad(void)
         GUIElement *tv;
         {
             Rectangle region = {0};
-            const char *tree_view_path = "/home/francesco/Desktop/Workspace";
+            char tree_view_path[1024];
+            if (getcwd(tree_view_path, sizeof(tree_view_path)) == NULL)
+                strcpy(tree_view_path, ".");
             tv = TreeView_new(region, "Tree-View", 
                               tree_view_path, 
                               treeViewCallback,
@@ -361,15 +365,14 @@ void snbpad(void)
         ClearBackground(RAYWHITE);
         for (size_t i = 0; i < element_count; i++)
             GUIElement_draw(elements[i]);
-
-/*
+        /*
         if (hovered != NULL)
-            DrawRectangle(hovered->region.x, 
-                          hovered->region.y, 
-                          hovered->region.width, 
-                          hovered->region.height, 
-                          DARKPURPLE);
-*/
+            DrawRectangleLines(hovered->region.x + 5,
+                               hovered->region.y + 5,
+                               hovered->region.width - 10,
+                               hovered->region.height - 10,
+                               PURPLE);
+        */
         EndDrawing();
         SetTraceLogLevel(LOG_DEBUG);
     }

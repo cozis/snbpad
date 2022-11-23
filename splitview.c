@@ -280,7 +280,6 @@ static const GUIElementMethods methods = {
     .onArrowRightDown = NULL,
     .onReturnDown = NULL,
     .onBackspaceDown = NULL,
-    .onTabDown = NULL,
     .onTextInput = NULL,
     .onPaste = NULL,
     .onCopy = NULL,

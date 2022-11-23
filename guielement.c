@@ -78,12 +78,6 @@ void GUIElement_onBackspaceDown(GUIElement *elem)
         elem->methods->onBackspaceDown(elem);
 }
 
-void GUIElement_onTabDown(GUIElement *elem)
-{
-    if (elem->methods->onTabDown != NULL)
-        elem->methods->onTabDown(elem);
-}
-
 void GUIElement_onTextInput(GUIElement *elem, 
                             const char *str, 
                             size_t len)
