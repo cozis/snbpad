@@ -533,7 +533,11 @@ GUIElement *TreeView_new(Rectangle region,
     }
     printTree(stderr, tree);
     tv->tree = tree;
-    tv->font = LoadFontEx(style->font_file, style->font_size, NULL, 250);
+    if (style->font_data == NULL)
+        tv->font = LoadFontEx(style->font_file, style->font_size, NULL, 250);
+    else
+        tv->font = LoadFontFromMemory(".ttf", style->font_data, style->font_data_size, 
+                                      style->font_size, NULL, 250);
     tv->style = style;
     tv->texture = LoadRenderTexture(region.width, region.height);
     tv->userp = userp;

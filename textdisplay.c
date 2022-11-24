@@ -823,13 +823,22 @@ GUIElement *TextDisplay_new(Rectangle region,
         tdisp->texture = LoadRenderTexture(region.width, 
                                            region.height);
 
-        tdisp->text.font = LoadFontEx(style->text.font_file, 
-                                      style->text.font_size, 
-                                      NULL, 250);
-        tdisp->lineno.font = LoadFontEx(style->lineno.font_file, 
-                                        style->lineno.font_size, 
-                                        NULL, 250);
-
+        if (style->text.font_data == NULL)
+            tdisp->text.font = LoadFontEx(style->text.font_file, 
+                                          style->text.font_size, 
+                                          NULL, 250);
+        else
+            tdisp->text.font = LoadFontFromMemory(".ttf", style->text.font_data, 
+                                                  style->text.font_data_size, 
+                                                  style->text.font_size, NULL, 250);
+        if (style->lineno.font_data == NULL)
+            tdisp->lineno.font = LoadFontEx(style->lineno.font_file, 
+                                            style->lineno.font_size, 
+                                            NULL, 250);
+        else
+            tdisp->lineno.font = LoadFontFromMemory(".ttf", style->lineno.font_data, 
+                                                    style->lineno.font_data_size, 
+                                                    style->lineno.font_size, NULL, 250);
 
         if (file == NULL) {
             tdisp->file[0] = '\0';

@@ -3,6 +3,8 @@
 typedef struct {
     Color bgcolor;
     Color fgcolor;
+    const unsigned char *font_data;
+    size_t               font_data_size;
     const char  *font_file;
     unsigned int font_size;
     bool auto_line_height;

@@ -11,6 +11,9 @@
 #include "splitview.h"
 #include "textdisplay.h"
 
+#include "font_data_inconsolata_light.c"
+#include "font_data_inconsolata_medium.c"
+
 GUIElement *focused = NULL;
 GUIElement *last_focused = NULL;
 GUIElement *elements[2]; 
@@ -37,15 +40,15 @@ void snbpad(void)
         return;
     }
 
-    const char *font_file = "/usr/share/fonts/TTF/Inconsolata-Medium.ttf";
-
     TextDisplayStyle style = {
         .lineno = {
             .hide = false,
             .nobg = false,
             .fgcolor = {0xcc, 0xcc, 0xcc, 0xff},
             .bgcolor = {48, 56, 65, 255},//{0x33, 0x33, 0x33, 0xff},
-            .font_file = font_file,
+            .font_file = NULL,
+            .font_data = font_data_inconsolata_medium,
+            .font_data_size = sizeof(font_data_inconsolata_medium),
             .font_size = 22,
             .auto_width = true,
             //.width = 40,
@@ -58,7 +61,9 @@ void snbpad(void)
         },
         .text = {
             .nobg = false,
-            .font_file = font_file,
+            .font_file = NULL,
+            .font_data = font_data_inconsolata_medium,
+            .font_data_size = sizeof(font_data_inconsolata_medium),
             .font_size = 22,
             .v_align = TextAlignV_CENTER,
             .bgcolor = {48, 56, 65, 255},
@@ -91,7 +96,9 @@ void snbpad(void)
     TreeViewStyle tree_view_style = {
         .bgcolor = {0x33, 0x33, 0x33, 0xff},
         .fgcolor = {0xcc, 0xcc, 0xcc, 0xff},
-        .font_file = "/usr/share/fonts/TTF/Inconsolata-Light.ttf",
+        .font_file = NULL,
+        .font_data = font_data_inconsolata_light,
+        .font_data_size = sizeof(font_data_inconsolata_light),
         .font_size = 23,
         .auto_line_height = false,
         .line_height = 30,
