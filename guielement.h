@@ -31,6 +31,7 @@ typedef struct {
     void (*onFocusGained)(GUIElement*);
     void (*onResize)(GUIElement*, Rectangle);
     bool (*openFile)(GUIElement*, const char*);
+    void (*getMinimumSize)(GUIElement*, int*, int*);
 } GUIElementMethods;
 
 struct GUIElement {
@@ -65,5 +66,5 @@ GUIElement *GUIElement_getHovered(GUIElement *elem, int x, int y);
 void      GUIElement_setRegion(GUIElement *elem, Rectangle region);
 Rectangle GUIElement_getRegion(GUIElement *elem);
 bool GUIElement_openFile(GUIElement *elem, const char *file);
-
+void GUIElement_getMinimumSize(GUIElement *elem, int *w, int *h);
 #endif

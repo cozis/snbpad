@@ -42,7 +42,6 @@ typedef struct {
         Color selection_bgcolor;
     } text;
     struct {
-        unsigned int blink_period;
         Color bgcolor;
     } cursor;
     struct {

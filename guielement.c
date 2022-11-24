@@ -1,3 +1,4 @@
+#include <assert.h>
 #include "xutf8.h"
 #include "guielement.h"
 
@@ -174,4 +175,15 @@ bool GUIElement_openFile(GUIElement *elem, const char *file)
     if (elem->methods->openFile != NULL)
         return elem->methods->openFile(elem, file);
     return false;
+}
+
+void GUIElement_getMinimumSize(GUIElement *elem, 
+                               int *w, int *h)
+{
+    assert(w != NULL && h != NULL);
+    if (elem->methods->getMinimumSize == NULL) {
+        *w = 0;
+        *h = 0;
+    } else
+        elem->methods->getMinimumSize(elem, w, h);
 }

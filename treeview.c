@@ -356,6 +356,14 @@ void printTree(FILE *stream, Item *root)
     fprintf(stream, "<end>\n");
 }
 
+static void getMinimumSize(GUIElement *elem, 
+                           int *w, int *h)
+{
+    (void) elem;
+    *w = 50;
+    *h = 50;
+}
+
 static GUIElement*
 onClickDownCallback(GUIElement *elem, 
                     int x, int y)
@@ -474,6 +482,7 @@ static const GUIElementMethods methods = {
     .onOpen = NULL,
     .getHovered = NULL,
     .onResize = onResizeCallback,
+    .getMinimumSize = getMinimumSize,
 };
 
 GUIElement *TreeView_new(Rectangle region,

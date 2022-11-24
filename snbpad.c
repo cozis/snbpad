@@ -66,7 +66,6 @@ void snbpad(void)
             .selection_bgcolor = {87, 95, 104, 0xff},
         },
         .cursor = {
-            .blink_period = 500, 
             .bgcolor = {0xbb, 0xbb, 0xbb, 0xff},
         },
         .scroll = {
@@ -180,8 +179,20 @@ void snbpad(void)
     int right_arrow_counter = 0;
     SetTargetFPS(fps);
     uint64_t time_in_ms = 0;
-
     while (!WindowShouldClose()) {
+
+        {
+            int min_w = 0;
+            int min_h = 0;
+            for (size_t i = 0; i < element_count; i++) {
+                int elem_w;
+                int elem_h;
+                GUIElement_getMinimumSize(elements[i], &elem_w, &elem_h);
+                min_w = MAX(min_w, elem_w);
+                min_h = MAX(min_h, elem_h);
+            }
+            SetWindowMinSize(min_w, min_h);
+        }
 
         for (size_t i = 0; i < element_count; i++)
             GUIElement_tick(elements[i], time_in_ms);
@@ -372,7 +383,7 @@ void snbpad(void)
                                hovered->region.width - 10,
                                hovered->region.height - 10,
                                PURPLE);
-        */
+        */        
         EndDrawing();
         SetTraceLogLevel(LOG_DEBUG);
     }

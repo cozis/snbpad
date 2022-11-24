@@ -162,6 +162,13 @@ static void increaseVerticalScroll(TextDisplay *tdisp, int scroll_incr)
     setVerticalScroll(tdisp, tdisp->v_scroll.amount + scroll_incr);
 }
 
+static void getMinimumSize(GUIElement *elem, 
+                           int *w, int *h)
+{
+    *w = 50;
+    *h = 50;
+}
+
 static void onResizeCallback(GUIElement *elem, 
                              Rectangle old_region)
 {
@@ -175,9 +182,6 @@ static void onResizeCallback(GUIElement *elem,
 static void tickCallback(GUIElement *elem, uint64_t time_in_ms)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
-
-    double angular_velocity = 2 * M_PI / tdisp->style->cursor.blink_period;
-    tdisp->cursor.intensity = sin(time_in_ms * angular_velocity);
 
     if (tdisp->v_scroll.force != 0) {
         increaseVerticalScroll(tdisp, tdisp->v_scroll.force);
@@ -671,7 +675,6 @@ static bool drawCursor(DrawContext draw_context)
         if (tdisp->focused) {
             int relative_cursor_x = calculateStringRenderWidth(font, tdisp->style->text.font_size, line.str, cursor - line.off);
             Color color = tdisp->style->cursor.bgcolor;
-            color.a = 255 * (tdisp->cursor.intensity + 1) / 2;
             DrawRectangle(
                 draw_context.line_x + draw_context.line_num_w + relative_cursor_x,
                 draw_context.line_y,
@@ -728,7 +731,6 @@ static void drawCallback(GUIElement *elem)
                    tdisp->style);
         if (tdisp->focused) {
             Color color = tdisp->style->cursor.bgcolor;
-            color.a = 255 * tdisp->cursor.intensity;
             DrawRectangle(
                 draw_context.line_x + draw_context.line_num_w,
                 draw_context.line_y,
@@ -793,6 +795,7 @@ static const GUIElementMethods methods = {
     .getHovered = NULL,
     .onResize = onResizeCallback,
     .openFile = openFileCallback,
+    .getMinimumSize = getMinimumSize,
 };
 
 GUIElement *TextDisplay_new(Rectangle region,
@@ -814,7 +817,6 @@ GUIElement *TextDisplay_new(Rectangle region,
         tdisp->v_scroll.amount = 0;
         tdisp->v_scroll.start_amount = 0;
         tdisp->v_scroll.start_cursor = 0;
-        tdisp->cursor.intensity = 0;
         tdisp->focused = false;
         tdisp->selecting = false;
         tdisp->selection.active = false;

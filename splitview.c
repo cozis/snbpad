@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include "utils.h"
 #include "splitview.h"
 
 typedef struct {
@@ -23,6 +24,46 @@ static void freeCallback(GUIElement *elem)
     free(elem);
 }
 
+static void getMinimumSize(GUIElement *elem, 
+                           int *w, int *h)
+{
+    SplitView *sv = (SplitView*) elem;
+
+    int subregion_1_min_w;
+    int subregion_1_min_h;
+    GUIElement_getMinimumSize(sv->children[0], 
+                              &subregion_1_min_w, 
+                              &subregion_1_min_h);
+    int subregion_2_min_w;
+    int subregion_2_min_h;
+    GUIElement_getMinimumSize(sv->children[1], 
+                              &subregion_2_min_w, 
+                              &subregion_2_min_h);
+    int sep = sv->style->separator.size;
+    int min_w;
+    int min_h;
+    switch (sv->dir) {
+
+        case SplitDirection_HORIZONTAL:
+        min_w = subregion_1_min_w 
+              + subregion_2_min_w
+              + sep;
+        min_h = MAX(subregion_1_min_h, 
+                    subregion_2_min_h);
+        break;
+        
+        case SplitDirection_VERTICAL:
+        min_h = subregion_1_min_h
+              + subregion_2_min_h
+              + sep;
+        min_w = MAX(subregion_1_min_w, 
+                    subregion_2_min_w);
+        break;
+    }
+    *w = min_w;
+    *h = min_h;
+}
+
 static void onResizeCallback(GUIElement *elem, 
                              Rectangle old_region)
 {
@@ -33,6 +74,17 @@ static void onResizeCallback(GUIElement *elem,
     Rectangle old_subregion_2 = GUIElement_getRegion(sv->children[1]);
     Rectangle new_subregion_1;
     Rectangle new_subregion_2;
+
+    int subregion_1_min_w;
+    int subregion_1_min_h;
+    GUIElement_getMinimumSize(sv->children[0],
+                              &subregion_1_min_w,
+                              &subregion_1_min_h);
+    int subregion_2_min_w;
+    int subregion_2_min_h;
+    GUIElement_getMinimumSize(sv->children[1],
+                              &subregion_2_min_w,
+                              &subregion_2_min_h);
 
     const int sep = sv->style->separator.size;
 
@@ -58,6 +110,16 @@ static void onResizeCallback(GUIElement *elem,
             new_subregion_2.width = new_available - old_subregion_1.width;
             break;
         }
+        if (new_subregion_1.width < subregion_1_min_w) {
+            new_subregion_1.width = subregion_1_min_w;
+            new_subregion_2.width = new_available - subregion_1_min_w;
+            //assert(new_subregion_2.width >= subregion_2_min_w);
+        }
+        if (new_subregion_2.width < subregion_2_min_w) {
+            new_subregion_2.width = subregion_2_min_w;
+            new_subregion_1.width = new_available - subregion_2_min_w;
+            //assert(new_subregion_1.width >= subregion_1_min_w);
+        }
         new_subregion_2.x = new_subregion_1.x + new_subregion_1.width + sep;
     } else {
         int old_available = old_region.height - sep;
@@ -80,6 +142,16 @@ static void onResizeCallback(GUIElement *elem,
             new_subregion_1.height = old_subregion_1.height;
             new_subregion_2.height = new_available - old_subregion_1.height;
             break;
+        }
+        if (new_subregion_1.height < subregion_1_min_h) {
+            new_subregion_1.height = subregion_1_min_h;
+            new_subregion_2.height = new_available - subregion_1_min_h;
+            //assert(new_subregion_2.height >= subregion_2_min_h);
+        }
+        if (new_subregion_2.height < subregion_2_min_h) {
+            new_subregion_2.height = subregion_2_min_h;
+            new_subregion_1.height = new_available - subregion_2_min_h;
+            //assert(new_subregion_1.height >= subregion_1_min_h);
         }
         new_subregion_2.y = new_subregion_1.y + new_subregion_1.height + sep;
     }
@@ -104,7 +176,18 @@ static void onMouseMotionCallback(GUIElement *elem,
     if (sv->reshaping.active) {
         
         sv->reshaping.active = true;
-        
+    
+        int subregion_1_min_w;
+        int subregion_1_min_h;
+        GUIElement_getMinimumSize(sv->children[0],
+                                  &subregion_1_min_w,
+                                  &subregion_1_min_h);
+        int subregion_2_min_w;
+        int subregion_2_min_h;
+        GUIElement_getMinimumSize(sv->children[1],
+                                  &subregion_2_min_w,
+                                  &subregion_2_min_h);
+
         Rectangle region = GUIElement_getRegion(elem);
         
         Rectangle new_subregion_1;
@@ -113,28 +196,70 @@ static void onMouseMotionCallback(GUIElement *elem,
         int sep = sv->style->separator.size;
         new_subregion_1.x = region.x;
         new_subregion_1.y = region.y;
+
         switch (sv->dir) {
 
             case SplitDirection_VERTICAL: {
                 int sep_y = abs_y - sv->reshaping.start_x_or_y_relative_to_separator;
                 new_subregion_1.width  = region.width;
                 new_subregion_1.height = sep_y - region.y;
-                new_subregion_2.x = region.x;
-                new_subregion_2.y = sep_y + sep;
                 new_subregion_2.width  = region.width;
                 new_subregion_2.height = region.height - new_subregion_1.height - sep;
+            
+                if (new_subregion_1.height < subregion_1_min_h) {
+                    new_subregion_1.height = subregion_1_min_h;
+                    new_subregion_2.height = region.height - sep - subregion_1_min_h;
+                    if (new_subregion_2.height < subregion_2_min_h)
+                        new_subregion_2.height = subregion_2_min_h;
+                }
+                if (new_subregion_2.height < subregion_2_min_h) {
+                    new_subregion_2.height = subregion_2_min_h;
+                    new_subregion_1.height = region.height - sep - subregion_2_min_h;
+                    if (new_subregion_1.height < subregion_1_min_h)
+                        new_subregion_1.height = subregion_1_min_h;
+                }
+                if (new_subregion_1.width < subregion_1_min_w)
+                    new_subregion_1.width = subregion_1_min_w;
+                if (new_subregion_2.width < subregion_2_min_w)
+                    new_subregion_2.width = subregion_2_min_w;
+
+                new_subregion_2.x = region.x;
+                new_subregion_2.y = new_subregion_1.y 
+                                  + new_subregion_1.height 
+                                  + sep;
             } break;
             
             case SplitDirection_HORIZONTAL: {
                 int sep_x = abs_x - sv->reshaping.start_x_or_y_relative_to_separator;
                 new_subregion_1.width = sep_x - region.x;
                 new_subregion_1.height  = region.height;
-                new_subregion_2.x = sep_x + sep;
-                new_subregion_2.y = region.y;
                 new_subregion_2.height = region.height;
                 new_subregion_2.width  = region.width - new_subregion_1.width - sep;
+                
+                if (new_subregion_1.width < subregion_1_min_w) {
+                    new_subregion_1.width = subregion_1_min_w;
+                    new_subregion_2.width = region.width - sep - subregion_1_min_w;
+                    if (new_subregion_2.width < subregion_2_min_w)
+                        new_subregion_2.width = subregion_2_min_w;
+                }
+                if (new_subregion_2.width < subregion_2_min_w) {
+                    new_subregion_2.width = subregion_2_min_w;
+                    new_subregion_1.width = region.width - sep - subregion_2_min_w;
+                    if (new_subregion_1.width < subregion_1_min_w)
+                        new_subregion_1.width = subregion_1_min_w;
+                }
+                if (new_subregion_1.height < subregion_1_min_h)
+                    new_subregion_1.height = subregion_1_min_h;
+                if (new_subregion_2.height < subregion_2_min_h)
+                    new_subregion_2.height = subregion_2_min_h;
+                
+                new_subregion_2.x = new_subregion_1.x 
+                                  + new_subregion_1.width 
+                                  + sep;
+                new_subregion_2.y = region.y;
             } break;
         }
+
         GUIElement_setRegion(sv->children[0], new_subregion_1);
         GUIElement_setRegion(sv->children[1], new_subregion_2);
     }
@@ -289,6 +414,7 @@ static const GUIElementMethods methods = {
     .getHovered = getHoveredCallback,
     .onResize = onResizeCallback,
     .openFile = NULL,
+    .getMinimumSize = getMinimumSize,
 };
 
 GUIElement *SplitView_new(Rectangle region,
