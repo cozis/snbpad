@@ -1,3 +1,4 @@
+#include "scrollbar.h"
 #include "guielement.h"
 
 typedef struct {
@@ -12,6 +13,8 @@ typedef struct {
     size_t padding_top;
     size_t padding_left;
     size_t subtree_padding_left;
+    ScrollbarStyle *v_scroll;
+    ScrollbarStyle *h_scroll;
 } TreeViewStyle;
 
 GUIElement *TreeView_new(Rectangle region,

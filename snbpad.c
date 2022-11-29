@@ -40,6 +40,16 @@ void snbpad(void)
         return;
     }
 
+    ScrollbarStyle scrollbar_style = {
+        .size = 20,
+        .inertia = 10,
+    };
+
+    ScrollbarStyle tree_view_scrollbar_style = {
+        .size = 10,
+        .inertia = 10,
+    };
+
     TextDisplayStyle style = {
         .lineno = {
             .hide = false,
@@ -73,10 +83,8 @@ void snbpad(void)
         .cursor = {
             .bgcolor = {0xbb, 0xbb, 0xbb, 0xff},
         },
-        .scroll = {
-            .inertia = 10,
-        },
-        .scrollbar_size = 20,
+        .v_scroll = &scrollbar_style,
+        .h_scroll = &scrollbar_style,
         .auto_line_height = true,
         .line_height = 20,
     };
@@ -105,6 +113,8 @@ void snbpad(void)
         .padding_top = 10,
         .padding_left = 10,
         .subtree_padding_left = 20,
+        .v_scroll = &tree_view_scrollbar_style,
+        .h_scroll = &tree_view_scrollbar_style,
     };
 
     GUIElement *sv2;

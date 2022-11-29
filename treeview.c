@@ -218,10 +218,14 @@ buildDirectoryTree(const char *path, size_t path_len,
 typedef struct {
     GUIElement base;
     Rectangle old_region;
+    Scrollbar v_scroll;
+    Scrollbar h_scroll;
     Item    *tree;
     ItemPool pool;
     Font     font;
     RenderTexture2D texture;
+    float logic_w;
+    float logic_h;
     char   path[1024];
     size_t path_len;
     const TreeViewStyle *style;
@@ -232,6 +236,8 @@ typedef struct {
 static void freeCallback(GUIElement *elem)
 {
     TreeView *tv = (TreeView*) elem;
+    Scrollbar_free(&tv->v_scroll);
+    Scrollbar_free(&tv->h_scroll);
     UnloadRenderTexture(tv->texture);
     UnloadFont(tv->font);
     free(elem);
@@ -370,33 +376,43 @@ onClickDownCallback(GUIElement *elem,
 {
     TreeView *tv = (TreeView*) elem;
 
-    int i = (y - tv->style->padding_top) / getLineHeight(tv->style);
-    assert(i >= 0);
+    bool on_thumb;
+    if (Scrollbar_onClickDown(&tv->v_scroll, x, y)) {
+        on_thumb = true;
+    } else if (Scrollbar_onClickDown(&tv->h_scroll, x, y)) {
+        on_thumb = true;
+    } else {
+        on_thumb = false;
+        int i = (y - tv->style->padding_top) / getLineHeight(tv->style);
+        assert(i >= 0);
 
-    Item  *stack[32];
-    size_t depth;
-    int status = getVisibleTreeItemByIndex(tv, i, stack, &depth, sizeof(stack)/sizeof(stack[0]));
+        Item  *stack[32];
+        size_t depth;
+        int status = getVisibleTreeItemByIndex(tv, i, stack, &depth, sizeof(stack)/sizeof(stack[0]));
 
-    if (status == 1) {
-        Item *item = stack[depth-1];
-        if (item->type == ItemType_DIR)
-            item->open = !item->open;
-        else {
-            char path[1024];
-            size_t len = concatPath(tv->path, tv->path_len, stack, depth, path);
-            if (tv->callback != NULL)
-                tv->callback(path, len, tv->userp);
+        if (status == 1) {
+            Item *item = stack[depth-1];
+            if (item->type == ItemType_DIR)
+                item->open = !item->open;
+            else {
+                char path[1024];
+                size_t len = concatPath(tv->path, tv->path_len, stack, depth, path);
+                if (tv->callback != NULL)
+                    tv->callback(path, len, tv->userp);
+            }
         }
     }
-    //printTree(stderr, tv->tree);
     return NULL;
 }
 
-static void drawChildren(Item *parent, size_t depth,
-                         size_t *visited_items, Font font,
-                         const TreeViewStyle *style)
+static float drawChildren(Item *parent, size_t depth,
+                          size_t *visited_items, Font font,
+                          const TreeViewStyle *style,
+                          int x_scroll, int y_scroll)
 {
     size_t line_height = getLineHeight(style);
+
+    float max_w = 0;
 
     Item *child = parent->children;
     while (child != NULL) {
@@ -410,36 +426,62 @@ static void drawChildren(Item *parent, size_t depth,
 
         int off_x = style->padding_left + depth * style->subtree_padding_left;
         int off_y = style->padding_top  + line_height * (*visited_items);
-        renderString(font, child->name, child->name_len,
-                     off_x, off_y, style->font_size, 
-                     style->fgcolor);
+        
+        int real_x = off_x - x_scroll;
+        int real_y = off_y - y_scroll;
+        float text_w = renderString(font, child->name, child->name_len,
+                                    real_x, real_y, style->font_size, 
+                                    style->fgcolor);
+        float line_w = off_x + text_w;
+        if (line_w > max_w)
+            max_w = line_w;
+
         (*visited_items)++;
-        if (child->type == ItemType_DIR && child->open)
-            drawChildren(child, depth+1, 
-                         visited_items, font, style);
+        if (child->type == ItemType_DIR && child->open) {
+            float max_w2 = drawChildren(child, depth+1, visited_items, font, style,
+                                        x_scroll, y_scroll);
+            if (max_w2 > max_w)
+                max_w = max_w2;
+        }
 
         child = child->next;
     }
+    return max_w;
 }
 
-static void drawSubtree(Item *root, Font font,
-                        const TreeViewStyle *style)
+static float drawSubtree(Item *root, Font font, size_t *num,
+                         const TreeViewStyle *style,
+                          int x_scroll, int y_scroll)
 {
     size_t visited_items = 0;
-    drawChildren(root, 1, &visited_items, 
-                 font, style);
+    float max_w = drawChildren(root, 1, &visited_items, font, style, x_scroll, y_scroll);
+    *num = visited_items;
+    return max_w;
 }
 
 static void drawCallback(GUIElement *elem)
 {
     TreeView *tv = (TreeView*) elem;
-    //printTree(stderr, tv->tree);
     BeginTextureMode(tv->texture);
     ClearBackground(tv->style->bgcolor);
-    drawSubtree(tv->tree, 
-                tv->font, 
-                tv->style);
+
+    int x_scroll = Scrollbar_getValue(&tv->h_scroll);
+    int y_scroll = Scrollbar_getValue(&tv->v_scroll);
+
+    size_t rows;
+    float logic_w = drawSubtree(tv->tree, tv->font, &rows, tv->style,
+                                x_scroll, y_scroll);
+
+    size_t line_height = getLineHeight(tv->style);
+    float logic_h = line_height * rows
+                  + tv->style->padding_top;
+
+    scrollbar_draw(&tv->v_scroll);
+    scrollbar_draw(&tv->h_scroll);
     EndTextureMode();
+
+    tv->logic_w = logic_w;
+    tv->logic_h = logic_h;
 
     {
         RenderTexture2D target = tv->texture;
@@ -459,17 +501,57 @@ static void drawCallback(GUIElement *elem)
     }
 }
 
+static void tickCallback(GUIElement *elem, uint64_t time_in_ms)
+{
+    TreeView *tv = (TreeView*) elem;
+    Scrollbar_tick(&tv->v_scroll, time_in_ms);
+    Scrollbar_tick(&tv->h_scroll, time_in_ms);
+}
+
+static void onMouseWheelCallback(GUIElement *elem, int y)
+{
+    TreeView *tv = (TreeView*) elem;
+    Scrollbar_addForce(&tv->v_scroll, 30 * y);
+}
+
+static void onMouseMotionCallback(GUIElement *elem, 
+                                  int x, int y)
+{
+    TreeView *tv = (TreeView*) elem;
+
+    if (Scrollbar_onMouseMotion(&tv->v_scroll, y)) {
+    } else if (Scrollbar_onMouseMotion(&tv->h_scroll, x)) {
+    }
+}
+
+static void clickUpCallback(GUIElement *elem, 
+                            int x, int y)
+{
+    TreeView *tv = (TreeView*) elem;
+    Scrollbar_clickUp(&tv->v_scroll);
+    Scrollbar_clickUp(&tv->h_scroll);
+}
+
+static void 
+getLogicalSizeCallback(GUIElement *elem, 
+                       int *w, int *h)
+{
+    TreeView *tv = (TreeView*) elem;
+    *w = tv->logic_w;
+    *h = tv->logic_h;
+}
+
 static const GUIElementMethods methods = {
     .free = freeCallback,
-    .tick = NULL,
+    .tick = tickCallback,
     .draw = drawCallback,
-    .clickUp = NULL,
+    .clickUp = clickUpCallback,
     .onFocusLost = NULL,
     .onFocusGained = NULL,
     .onClickDown = onClickDownCallback,
     .offClickDown = NULL,
-    .onMouseWheel = NULL,
-    .onMouseMotion = NULL,
+    .onMouseWheel = onMouseWheelCallback,
+    .onMouseMotion = onMouseMotionCallback,
     .onArrowLeftDown = NULL,
     .onArrowRightDown = NULL,
     .onReturnDown = NULL,
@@ -483,6 +565,7 @@ static const GUIElementMethods methods = {
     .getHovered = NULL,
     .onResize = onResizeCallback,
     .getMinimumSize = getMinimumSize,
+    .getLogicalSize = getLogicalSizeCallback,
 };
 
 GUIElement *TreeView_new(Rectangle region,
@@ -542,6 +625,10 @@ GUIElement *TreeView_new(Rectangle region,
     tv->texture = LoadRenderTexture(region.width, region.height);
     tv->userp = userp;
     tv->callback = callback;
+    tv->logic_w = 0;
+    tv->logic_h = 0;
+    Scrollbar_init(&tv->v_scroll, ScrollbarDirection_VERTICAL,   (GUIElement*) tv, style->v_scroll);
+    Scrollbar_init(&tv->h_scroll, ScrollbarDirection_HORIZONTAL, (GUIElement*) tv, style->h_scroll);
 
     return (GUIElement*) tv;
 }

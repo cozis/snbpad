@@ -6,6 +6,7 @@
 #include "utils.h"
 #include "xutf8.h"
 #include "gapiter.h"
+#include "scrollbar.h"
 #include "textdisplay.h"
 #include "textrenderutils.h"
 
@@ -20,20 +21,13 @@ typedef struct {
     const TextDisplayStyle *style;
     struct {
         Font font;
+        int logest_line_width;
     } text;
     struct {
         Font font;
     } lineno;
-    struct {
-        int  force;
-        int  amount;
-        bool active;
-        int start_amount;
-        int start_cursor;
-    } v_scroll;
-    struct {
-        double intensity;
-    } cursor;
+    Scrollbar v_scroll;
+    Scrollbar h_scroll;
     RenderTexture2D texture;
     bool      focused;
     bool      selecting;
@@ -106,8 +100,11 @@ cursorFromClick(TextDisplay *tdisp,
     GapBufferIter iter;
     GapBufferIter_init(&iter, &tdisp->buffer);
     
+    int logic_y = y + Scrollbar_getValue(&tdisp->v_scroll);
+    int logic_x = x + Scrollbar_getValue(&tdisp->h_scroll);
+    
     Line line;
-    int line_idx = (y + tdisp->v_scroll.amount) / TextDisplay_getLineHeight(tdisp);
+    int line_idx = logic_y / TextDisplay_getLineHeight(tdisp);
     if (!GapBufferIter_getLine(&iter, line_idx, &line)) {
         GapBufferIter_free(&iter);
         return GapBuffer_getUsage(&tdisp->buffer);
@@ -117,49 +114,35 @@ cursorFromClick(TextDisplay *tdisp,
 
     Font font = tdisp->text.font;
     size_t cursor;
-    if (x < lineno_colm_w)
+    if (logic_x < lineno_colm_w)
         cursor = line.off;
     else
-        cursor = line.off + longestSubstringThatRendersInLessPixelsThan(font, tdisp->style->text.font_size, line.str, line.len, x - lineno_colm_w);
+        cursor = line.off + longestSubstringThatRendersInLessPixelsThan(font, tdisp->style->text.font_size, line.str, line.len, logic_x - lineno_colm_w);
 
     GapBufferIter_free(&iter);
     return cursor;
 }
 
-static unsigned int 
-TextDisplay_getLogicalHeight(TextDisplay *tdisp)
+static void 
+getLogicalSizeCallback(GUIElement *elem, 
+                       int *w, int *h)
 {
-    return GapBuffer_getLineno(&tdisp->buffer) * TextDisplay_getLineHeight(tdisp);
-}
+    TextDisplay *td = (TextDisplay*) elem;
+    
 
-static bool verticalScrollReachedLowerLimit(TextDisplay *tdisp)
-{
-    return tdisp->v_scroll.amount == 0;
-}
+    int longest_line_w = td->text.logest_line_width;
+    int  lineno_colm_w = TextDisplay_getLinenoColumnWidth(td);
 
-static bool verticalScrollReachedUpperLimit(TextDisplay *tdisp)
-{
-    return tdisp->v_scroll.amount == (int) TextDisplay_getLogicalHeight(tdisp) - tdisp->base.region.height;
-}
+    Rectangle region = GUIElement_getRegion(elem);
+    int real_w = region.width;
 
-static void setVerticalScroll(TextDisplay *tdisp, int scroll)
-{
-    int logical_height = TextDisplay_getLogicalHeight(tdisp);
+    int logical_w = lineno_colm_w + longest_line_w;
 
-    int max_scroll;
-    if (logical_height > tdisp->base.region.height)
-        max_scroll = logical_height - tdisp->base.region.height;
-    else
-        max_scroll = 0;
+    int logical_h = GapBuffer_getLineno(&td->buffer) 
+                  * TextDisplay_getLineHeight(td);
 
-    scroll = MAX(scroll, 0);
-    scroll = MIN(scroll, max_scroll);
-    tdisp->v_scroll.amount = scroll;
-}
-
-static void increaseVerticalScroll(TextDisplay *tdisp, int scroll_incr)
-{
-    setVerticalScroll(tdisp, tdisp->v_scroll.amount + scroll_incr);
+    *w = logical_w;
+    *h = logical_h;
 }
 
 static void getMinimumSize(GUIElement *elem, 
@@ -182,29 +165,14 @@ static void onResizeCallback(GUIElement *elem,
 static void tickCallback(GUIElement *elem, uint64_t time_in_ms)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
-
-    if (tdisp->v_scroll.force != 0) {
-        increaseVerticalScroll(tdisp, tdisp->v_scroll.force);
-        if (tdisp->v_scroll.force < 0) {
-            tdisp->v_scroll.force += tdisp->style->scroll.inertia;
-            if (tdisp->v_scroll.force > 0)
-                tdisp->v_scroll.force = 0;
-            if (verticalScrollReachedLowerLimit(tdisp))
-                tdisp->v_scroll.force = 0;
-        } else {
-            tdisp->v_scroll.force -= tdisp->style->scroll.inertia;
-            if (tdisp->v_scroll.force < 0)
-                tdisp->v_scroll.force = 0;
-            if (verticalScrollReachedUpperLimit(tdisp))
-                tdisp->v_scroll.force = 0;
-        }
-    }
+    Scrollbar_tick(&tdisp->v_scroll, time_in_ms);
+    Scrollbar_tick(&tdisp->h_scroll, time_in_ms);
 }
 
 static void onMouseWheelCallback(GUIElement *elem, int y)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
-    tdisp->v_scroll.force += 30 * y;
+    Scrollbar_addForce(&tdisp->v_scroll, 30 * y);
 }
 
 static void onMouseMotionCallback(GUIElement *elem, 
@@ -212,62 +180,12 @@ static void onMouseMotionCallback(GUIElement *elem,
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
 
-    if (tdisp->v_scroll.active) {
-        const unsigned int logical_text_height = TextDisplay_getLogicalHeight(tdisp);
-        int y_delta = y - tdisp->v_scroll.start_cursor;
-        int amount = tdisp->v_scroll.start_amount + y_delta * (double) logical_text_height / tdisp->base.region.height;
-        setVerticalScroll(tdisp, amount);
+    if (Scrollbar_onMouseMotion(&tdisp->v_scroll, y)) {
+    } else if (Scrollbar_onMouseMotion(&tdisp->h_scroll, x)) {
     } else if (tdisp->selecting) {
         size_t pos = cursorFromClick(tdisp, x, y);
         tdisp->selection.end = pos;
     }
-}
-
-static void 
-getVerticalScrollbarPosition(TextDisplay *tdisp,
-                             Rectangle *scrollbar, 
-                             Rectangle *thumb)
-{
-    if (TextDisplay_getLogicalHeight(tdisp) < (unsigned int) tdisp->base.region.height) {
-        scrollbar->width  = 0;
-        scrollbar->height = 0;
-        scrollbar->x = 0;
-        scrollbar->y = 0;
-        thumb->width  = 0;
-        thumb->height = 0;
-        thumb->x = 0;
-        thumb->y = 0;
-    } else {
-        scrollbar->width  = tdisp->style->scrollbar_size;
-        scrollbar->height = tdisp->base.region.height;
-        scrollbar->x = tdisp->base.region.width - scrollbar->width;
-        scrollbar->y = 0;
-
-        int logical_text_height = TextDisplay_getLogicalHeight(tdisp);
-        int thumb_y = tdisp->base.region.height * (double) tdisp->v_scroll.amount / logical_text_height;
-        int thumb_height = scrollbar->height * (double) tdisp->base.region.height / logical_text_height;
-
-        thumb->x = scrollbar->x;
-        thumb->y = scrollbar->y + thumb_y;
-        thumb->width  = scrollbar->width;
-        thumb->height = thumb_height;
-    }
-}
-
-static bool 
-clickedOnScrollbarThumb(TextDisplay *td, 
-                        int x, int y)
-{
-    Rectangle v_scrollbar, v_thumb;
-    getVerticalScrollbarPosition(td, &v_scrollbar, &v_thumb);
-
-    Vector2 cursor_point = {x, y};
-    if (CheckCollisionPointRec(cursor_point, v_scrollbar))
-        /* Clicked on scrollbar */
-        if (CheckCollisionPointRec(cursor_point, v_thumb))
-            /* Clicked on thumb */
-            return true;
-    return false;
 }
 
 static GUIElement*
@@ -276,29 +194,24 @@ onClickDownCallback(GUIElement *elem,
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
 
-    bool on_thumb = clickedOnScrollbarThumb(tdisp, x, y);
-
-    if (on_thumb) {
-        tdisp->v_scroll.active = true;
-        tdisp->v_scroll.start_cursor = y;
-        tdisp->v_scroll.start_amount = tdisp->v_scroll.amount;
-    } else {
-
-        if (tdisp->selection.active) {
-            tdisp->selection.active = false;
-        } else if (!tdisp->selecting) {
-            TraceLog(LOG_INFO, "Selection started");
-            tdisp->selecting = true;
-            tdisp->selection.active = true;
-            tdisp->selection.start = cursorFromClick(tdisp, x, y);
-            tdisp->selection.end = tdisp->selection.start;
-        }
+    bool on_thumb;
+    if (Scrollbar_onClickDown(&tdisp->v_scroll, x, y)) {
+        on_thumb = true;
+    } else if (Scrollbar_onClickDown(&tdisp->h_scroll, x, y)) {
+        on_thumb = true;
+    } else if (tdisp->selection.active) {
+        on_thumb = false;
+        tdisp->selection.active = false;
+    } else if (!tdisp->selecting) {
+        on_thumb = false;
+        TraceLog(LOG_INFO, "Selection started");
+        tdisp->selecting = true;
+        tdisp->selection.active = true;
+        tdisp->selection.start = cursorFromClick(tdisp, x, y);
+        tdisp->selection.end = tdisp->selection.start;
     }
 
-    if (on_thumb)
-        return NULL;
-    else
-        return elem;
+    return on_thumb ? NULL : elem;
 }
 
 static void offClickDownCallback(GUIElement *elem)
@@ -312,9 +225,10 @@ static void clickUpCallback(GUIElement *elem,
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
 
-    if (tdisp->v_scroll.active)
-        tdisp->v_scroll.active = false;
-    else if (tdisp->selecting) {
+    Scrollbar_clickUp(&tdisp->v_scroll);
+    Scrollbar_clickUp(&tdisp->h_scroll);
+
+    if (tdisp->selecting) {
         TraceLog(LOG_INFO, "Selection stopped");
         tdisp->selecting = false;
         if (tdisp->selection.start == tdisp->selection.end) {
@@ -438,6 +352,7 @@ static void onPasteCallback(GUIElement *elem)
 static void onOpenCallback(GUIElement *elem)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
+
     sfd_Options opt = {
         .title        = "Open Text File",
         .filter_name  = "Text File",
@@ -458,7 +373,8 @@ static void onOpenCallback(GUIElement *elem)
         // Swap the current one with the new one
         GapBuffer_free(&tdisp->buffer);
         tdisp->buffer = temp;
-        tdisp->v_scroll.amount = 0;
+        Scrollbar_setValue(&tdisp->v_scroll, 0);
+        Scrollbar_setValue(&tdisp->h_scroll, 0);
         strncpy(tdisp->file, file, sizeof(tdisp->file));
         updateWindowTitle(tdisp);
     }
@@ -520,7 +436,8 @@ static bool openFileCallback(GUIElement *elem,
             else {
                 GapBuffer_free(&td->buffer);
                 td->buffer = buffer2;
-                td->v_scroll.amount = 0;
+                Scrollbar_setValue(&td->v_scroll, 0);
+                Scrollbar_setValue(&td->h_scroll, 0);
                 strcpy(td->file, file);
                 TraceLog(LOG_INFO, "Opened file \"%s\"", file);
                 opened = true;
@@ -540,6 +457,7 @@ typedef struct {
     int line_y;
     Line line;
     unsigned int no;
+    float max_w;
 } DrawContext;
 
 static void initDrawContext(DrawContext *draw_context, 
@@ -548,8 +466,8 @@ static void initDrawContext(DrawContext *draw_context,
     draw_context->tdisp = tdisp;
     draw_context->line_height = TextDisplay_getLineHeight(tdisp);
     draw_context->line_num_w  = TextDisplay_getLinenoColumnWidth(tdisp);
-    draw_context->line_x = 0;
-    draw_context->line_y = -tdisp->v_scroll.amount;
+    draw_context->line_x = -Scrollbar_getValue(&tdisp->h_scroll);
+    draw_context->line_y = -Scrollbar_getValue(&tdisp->v_scroll);
     draw_context->no = 0;
     GapBufferIter_init(&draw_context->iter, &tdisp->buffer);
 }
@@ -650,7 +568,7 @@ static void drawSelection(DrawContext draw_context)
     }
 }
 
-static void drawLineText(DrawContext draw_context)
+static float drawLineText(DrawContext draw_context)
 {
     TextDisplay *tdisp = draw_context.tdisp;
     Font font = tdisp->text.font;
@@ -659,8 +577,9 @@ static void drawLineText(DrawContext draw_context)
     const size_t n = draw_context.line.len;
     int x = draw_context.line_x + draw_context.line_num_w;
     int y = draw_context.line_y + (draw_context.line_height - font_size) / 2;
-    renderString(font, s, n, x, y, font_size, 
-                 tdisp->style->text.fgcolor);
+    float w = renderString(font, s, n, x, y, font_size, 
+                           tdisp->style->text.fgcolor);
+    return w;
 }
 
 static bool drawCursor(DrawContext draw_context)
@@ -688,16 +607,6 @@ static bool drawCursor(DrawContext draw_context)
     return false;
 }
 
-static void drawVerticalScrollbar(DrawContext draw_context)
-{
-    Rectangle scrollbar, thumb;
-    getVerticalScrollbarPosition(draw_context.tdisp, 
-                                 &scrollbar, &thumb);
-    DrawRectangle(thumb.x, thumb.y,
-                  thumb.width, thumb.height,
-                  RED);
-}
-
 static void drawCallback(GUIElement *elem)
 {
     TextDisplay *tdisp = (TextDisplay*) elem;
@@ -705,6 +614,7 @@ static void drawCallback(GUIElement *elem)
     BeginTextureMode(tdisp->texture);
     ClearBackground(tdisp->style->text.bgcolor);
     
+    float max_w = 0;
     bool drew_cursor = false;
     DrawContext draw_context;
     initDrawContext(&draw_context, tdisp);
@@ -717,9 +627,12 @@ static void drawCallback(GUIElement *elem)
                    tdisp->lineno.font,
                    tdisp->style);
         drawSelection(draw_context);
-        drawLineText(draw_context);
+        float w = drawLineText(draw_context);
         if (drawCursor(draw_context))
             drew_cursor = true;
+
+        if (w > max_w)
+            max_w = w;
     }
     if (drew_cursor == false) {
         drawLineno(draw_context.no, 
@@ -739,7 +652,9 @@ static void drawCallback(GUIElement *elem)
                 color);
         }
     }
-    drawVerticalScrollbar(draw_context);
+    scrollbar_draw(&tdisp->v_scroll);
+    scrollbar_draw(&tdisp->h_scroll);
+    tdisp->text.logest_line_width = max_w;
     freeDrawContext(&draw_context);
     EndTextureMode();
 
@@ -767,6 +682,8 @@ static void freeCallback(GUIElement *elem)
     UnloadRenderTexture(tdisp->texture);
     UnloadFont(tdisp->text.font);
     UnloadFont(tdisp->lineno.font);
+    Scrollbar_free(&tdisp->v_scroll);
+    Scrollbar_free(&tdisp->h_scroll);
     GapBuffer_free(&tdisp->buffer);
     free(elem);
 }
@@ -796,6 +713,7 @@ static const GUIElementMethods methods = {
     .onResize = onResizeCallback,
     .openFile = openFileCallback,
     .getMinimumSize = getMinimumSize,
+    .getLogicalSize = getLogicalSizeCallback,
 };
 
 GUIElement *TextDisplay_new(Rectangle region,
@@ -812,17 +730,15 @@ GUIElement *TextDisplay_new(Rectangle region,
         tdisp->base.name[sizeof(tdisp->base.name)-1] = '\0';
         tdisp->old_region = region;
         tdisp->style = style;
-        tdisp->v_scroll.active = false;
-        tdisp->v_scroll.force = 0;
-        tdisp->v_scroll.amount = 0;
-        tdisp->v_scroll.start_amount = 0;
-        tdisp->v_scroll.start_cursor = 0;
+        Scrollbar_init(&tdisp->v_scroll, ScrollbarDirection_VERTICAL,   (GUIElement*) tdisp, style->v_scroll);
+        Scrollbar_init(&tdisp->h_scroll, ScrollbarDirection_HORIZONTAL, (GUIElement*) tdisp, style->h_scroll);
         tdisp->focused = false;
         tdisp->selecting = false;
         tdisp->selection.active = false;
         tdisp->texture = LoadRenderTexture(region.width, 
                                            region.height);
 
+        tdisp->text.logest_line_width = 0;
         if (style->text.font_data == NULL)
             tdisp->text.font = LoadFontEx(style->text.font_file, 
                                           style->text.font_size, 

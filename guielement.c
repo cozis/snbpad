@@ -187,3 +187,13 @@ void GUIElement_getMinimumSize(GUIElement *elem,
     } else
         elem->methods->getMinimumSize(elem, w, h);
 }
+
+void GUIElement_getLogicalSize(GUIElement *elem, int *w, int *h)
+{
+    if (elem->methods->getLogicalSize == NULL) {
+        Rectangle region = GUIElement_getRegion(elem);
+        *w = region.width;
+        *h = region.height;
+    } else
+        elem->methods->getLogicalSize(elem, w, h);
+}

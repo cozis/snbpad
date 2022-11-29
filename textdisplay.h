@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <raylib.h>
 #include "guielement.h"
+#include "scrollbar.h"
 
 typedef enum {
     TextAlignH_LEFT,
@@ -48,10 +49,8 @@ typedef struct {
     struct {
         Color bgcolor;
     } cursor;
-    struct {
-        int inertia;
-    } scroll;
-    unsigned int scrollbar_size;
+    ScrollbarStyle *v_scroll;
+    ScrollbarStyle *h_scroll;
     bool    auto_line_height;
     unsigned int line_height;
 } TextDisplayStyle;
